@@ -16,7 +16,6 @@ class DownloadService: ObservableObject {
     }
 
     private var urlSession: URLSession!
-    private var taskMap: [URLSessionDownloadTask: String] = [:]
 
     private init() {
         let config = URLSessionConfiguration.background(withIdentifier: "com.vibe.music.download")
@@ -36,25 +35,19 @@ class DownloadService: ObservableObject {
 
         downloads[track.id]?.state = .downloading
 
-        let task = urlSession.downloadTask(with: audioURL) { [weak self] tempURL, _, error in
-            Task { @MainActor in
-                guard let self, let tempURL else {
-                    self?.downloads[track.id]?.state = .failed
-                    return
-                }
-                let saved = self.saveFile(from: tempURL, for: track)
-                self.downloads[track.id]?.state = saved != nil ? .done : .failed
-                if let path = saved {
-                    LibraryService.shared.markDownloaded(trackID: track.id, localPath: path)
-                }
+        do {
+            let (localURL, _) = try await urlSession.download(from: audioURL)
+            let saved = self.saveFile(from: localURL, for: track)
+            self.downloads[track.id]?.state = saved != nil ? .done : .failed
+            if let path = saved {
+                LibraryService.shared.markDownloaded(trackID: track.id, localPath: path)
             }
+        } catch {
+            self.downloads[track.id]?.state = .failed
         }
-        taskMap[task] = track.id
-        task.resume()
     }
 
     func cancelDownload(trackID: String) {
-        taskMap.first(where: { $0.value == trackID })?.key.cancel()
         downloads.removeValue(forKey: trackID)
     }
 
