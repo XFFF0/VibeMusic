@@ -2,26 +2,17 @@ name: Build Vibe Music IPA
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main]
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: 'Build type'
-        required: true
-        default: 'debug'
-        type: choice
-        options: [debug, release]
 
 env:
   SCHEME: VibeMusic
-  BUNDLE_ID: com.vibe.music
 
 jobs:
   build:
-    name: Build IPA
     runs-on: macos-14
-
     steps:
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -32,37 +23,36 @@ jobs:
         run: |
           curl -L https://github.com/yonaskolb/XcodeGen/releases/download/2.41.0/xcodegen.zip -o xcodegen.zip
           unzip -q xcodegen.zip
-          XCODEGEN_BIN=$(find . -name "xcodegen" -type f | head -1)
-          chmod +x "$XCODEGEN_BIN"
-          sudo cp "$XCODEGEN_BIN" /usr/local/bin/xcodegen
+          BIN=$(find . -name "xcodegen" -type f | head -1)
+          chmod +x "$BIN"
+          sudo cp "$BIN" /usr/local/bin/xcodegen
           xcodegen version
 
-      - name: Write xcconfig with secrets
+      - name: Inject secrets
         env:
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_URL_SCHEME: ${{ secrets.GOOGLE_URL_SCHEME }}
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          RAPID_API_KEY: ${{ secrets.RAPID_API_KEY }}
+          GID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GUS: ${{ secrets.GOOGLE_URL_SCHEME }}
+          YT: ${{ secrets.YOUTUBE_API_KEY }}
+          RA: ${{ secrets.RAPID_API_KEY }}
         run: |
-          echo "GOOGLE_CLIENT_ID = ${GOOGLE_CLIENT_ID}" > Secrets.xcconfig
-          echo "GOOGLE_URL_SCHEME = ${GOOGLE_URL_SCHEME}" >> Secrets.xcconfig
-          echo "YOUTUBE_API_KEY = ${YOUTUBE_API_KEY}" >> Secrets.xcconfig
-          echo "RAPID_API_KEY = ${RAPID_API_KEY}" >> Secrets.xcconfig
+          printf 'GOOGLE_CLIENT_ID = %s\n' "$GID" > Secrets.xcconfig
+          printf 'GOOGLE_URL_SCHEME = %s\n' "$GUS" >> Secrets.xcconfig
+          printf 'YOUTUBE_API_KEY = %s\n' "$YT" >> Secrets.xcconfig
+          printf 'RAPID_API_KEY = %s\n' "$RA" >> Secrets.xcconfig
 
-      - name: Generate Xcode project
+      - name: Generate project
         run: xcodegen generate --spec project.yml
 
-      - name: Resolve Swift packages
+      - name: Resolve packages
         run: xcodebuild -resolvePackageDependencies -project VibeMusic.xcodeproj -scheme $SCHEME
 
-      - name: Build unsigned .app
+      - name: Build
         env:
-          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
-          GOOGLE_URL_SCHEME: ${{ secrets.GOOGLE_URL_SCHEME }}
-          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-          RAPID_API_KEY: ${{ secrets.RAPID_API_KEY }}
+          GID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GUS: ${{ secrets.GOOGLE_URL_SCHEME }}
+          YT: ${{ secrets.YOUTUBE_API_KEY }}
+          RA: ${{ secrets.RAPID_API_KEY }}
         run: |
-          # Use default DerivedData â most reliable way to get a complete .app
           xcodebuild build \
             -project VibeMusic.xcodeproj \
             -scheme $SCHEME \
@@ -73,44 +63,20 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
-            GOOGLE_URL_SCHEME="${GOOGLE_URL_SCHEME}" \
-            YOUTUBE_API_KEY="${YOUTUBE_API_KEY}" \
-            RAPID_API_KEY="${RAPID_API_KEY}"
+            GOOGLE_CLIENT_ID="$GID" \
+            GOOGLE_URL_SCHEME="$GUS" \
+            YOUTUBE_API_KEY="$YT" \
+            RAPID_API_KEY="$RA"
 
-      - name: Verify and package IPA
+      - name: Package IPA
         run: |
-          echo "=== Searching for .app ==="
-          find DerivedData -name "*.app" -type d 2>/dev/null
-
-          APP_PATH=$(find DerivedData -name "VibeMusic.app" -type d | head -1)
-
-          if [ -z "$APP_PATH" ]; then
-            echo "ERROR: VibeMusic.app not found"
-            exit 1
-          fi
-
-          echo "=== .app contents ==="
-          ls -la "$APP_PATH"
-
-          # Verify executable exists
-          EXEC="$APP_PATH/VibeMusic"
-          if [ ! -f "$EXEC" ]; then
-            echo "ERROR: Executable missing!"
-            echo "Files in .app:"
-            find "$APP_PATH" -maxdepth 1
-            exit 1
-          fi
-
-          echo "Executable found: $(file "$EXEC")"
-          echo "Size: $(du -sh "$APP_PATH")"
-
-          # Package IPA
+          APP=$(find DerivedData -name "VibeMusic.app" -type d | head -1)
+          echo "App: $APP"
+          ls "$APP"
           mkdir -p Payload
-          cp -r "$APP_PATH" Payload/VibeMusic.app
+          cp -r "$APP" Payload/VibeMusic.app
           zip -qr VibeMusic.ipa Payload
           ls -lh VibeMusic.ipa
-          echo "SUCCESS: IPA created"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
@@ -118,21 +84,3 @@ jobs:
           name: VibeMusic-${{ github.run_number }}
           path: VibeMusic.ipa
           retention-days: 30
-
-      - name: Create Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: softprops/action-gh-release@v2
-        with:
-          files: VibeMusic.ipa
-          generate_release_notes: true
-          name: Vibe Music ${{ github.ref_name }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  notify-failure:
-    needs: build
-    if: failure()
-    runs-on: ubuntu-latest
-    steps:
-      - name: Build failed notification
-        run: echo "::error::Build failed! ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
