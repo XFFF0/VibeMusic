@@ -1,0 +1,116 @@
+name: Build Vibe Music IPA
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build type'
+        required: true
+        default: 'debug'
+        type: choice
+        options: [debug, release]
+
+env:
+  SCHEME: VibeMusic
+  BUNDLE_ID: com.vibe.music
+
+jobs:
+  build:
+    name: Build IPA
+    runs-on: macos-14     # Xcode 15, Apple Silicon
+
+    steps:
+      # ── Checkout ──────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # ── Select Xcode ──────────────────────────────────────
+      - name: Select Xcode 15
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      # ── Install XcodeGen ──────────────────────────────────
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      # ── Inject API Keys into xcconfig ─────────────────────
+      - name: Write xcconfig with secrets
+        run: |
+          cat > Secrets.xcconfig <<EOF
+          GOOGLE_CLIENT_ID = ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_URL_SCHEME = ${{ secrets.GOOGLE_URL_SCHEME }}
+          YOUTUBE_API_KEY = ${{ secrets.YOUTUBE_API_KEY }}
+          RAPID_API_KEY = ${{ secrets.RAPID_API_KEY }}
+          EOF
+
+      # ── Generate Xcode project ────────────────────────────
+      - name: Generate Xcode project
+        run: xcodegen generate --spec project.yml
+
+      # ── Resolve SPM packages ──────────────────────────────
+      - name: Resolve Swift packages
+        run: xcodebuild -resolvePackageDependencies -project VibeMusic.xcodeproj -scheme $SCHEME
+
+      # ── Build (no signing) ────────────────────────────────
+      - name: Build unsigned .app
+        run: |
+          xcodebuild build \
+            -project VibeMusic.xcodeproj \
+            -scheme $SCHEME \
+            -configuration ${{ github.event.inputs.build_type == 'release' && 'Release' || 'Debug' }} \
+            -sdk iphoneos \
+            -arch arm64 \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            GOOGLE_CLIENT_ID="${{ secrets.GOOGLE_CLIENT_ID }}" \
+            GOOGLE_URL_SCHEME="${{ secrets.GOOGLE_URL_SCHEME }}" \
+            YOUTUBE_API_KEY="${{ secrets.YOUTUBE_API_KEY }}" \
+            RAPID_API_KEY="${{ secrets.RAPID_API_KEY }}" \
+            BUILT_PRODUCTS_DIR=$(pwd)/build/Products \
+            CONFIGURATION_BUILD_DIR=$(pwd)/build/Products \
+            | xcpretty --color --simple
+
+      # ── Package .app → .ipa ───────────────────────────────
+      - name: Package IPA
+        run: |
+          APP_PATH=$(find build/Products -name "*.app" | head -1)
+          echo "Found app at: $APP_PATH"
+          mkdir -p IPA/Payload
+          cp -r "$APP_PATH" IPA/Payload/
+          cd IPA
+          zip -qr ../VibeMusic.ipa Payload
+          cd ..
+          ls -lh VibeMusic.ipa
+
+      # ── Upload IPA artifact ───────────────────────────────
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: VibeMusic-${{ github.event.inputs.build_type || 'debug' }}-${{ github.run_number }}
+          path: VibeMusic.ipa
+          retention-days: 30
+
+      # ── Create GitHub Release (on tag) ────────────────────
+      - name: Create Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: VibeMusic.ipa
+          generate_release_notes: true
+          name: Vibe Music ${{ github.ref_name }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ── Notify on failure ─────────────────────────────────────
+  notify-failure:
+    needs: build
+    if: failure()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Build failed notification
+        run: |
+          echo "::error::Vibe Music build failed! Check logs at ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
