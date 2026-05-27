@@ -62,47 +62,55 @@ jobs:
           YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
           RAPID_API_KEY: ${{ secrets.RAPID_API_KEY }}
         run: |
-          BUILD_DIR=$(pwd)/build
-
+          # Use default DerivedData â most reliable way to get a complete .app
           xcodebuild build \
             -project VibeMusic.xcodeproj \
             -scheme $SCHEME \
             -configuration Release \
             -sdk iphoneos \
             -arch arm64 \
+            -derivedDataPath DerivedData \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            BUILD_DIR="$BUILD_DIR" \
-            SYMROOT="$BUILD_DIR" \
-            OBJROOT="$BUILD_DIR/Intermediates" \
             GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID}" \
             GOOGLE_URL_SCHEME="${GOOGLE_URL_SCHEME}" \
             YOUTUBE_API_KEY="${YOUTUBE_API_KEY}" \
-            RAPID_API_KEY="${RAPID_API_KEY}" \
-            | xcpretty --color --simple
+            RAPID_API_KEY="${RAPID_API_KEY}"
 
-          echo "--- Build directory ---"
-          find "$BUILD_DIR" -name "*.app" -type d | head -10
-
-      - name: Package IPA
+      - name: Verify and package IPA
         run: |
-          BUILD_DIR=$(pwd)/build
-          APP_PATH=$(find "$BUILD_DIR" -name "VibeMusic.app" -type d | head -1)
+          echo "=== Searching for .app ==="
+          find DerivedData -name "*.app" -type d 2>/dev/null
+
+          APP_PATH=$(find DerivedData -name "VibeMusic.app" -type d | head -1)
 
           if [ -z "$APP_PATH" ]; then
-            echo "ERROR: .app not found:"
-            find "$BUILD_DIR" -maxdepth 4 | head -40
+            echo "ERROR: VibeMusic.app not found"
             exit 1
           fi
 
-          echo "Found .app at: $APP_PATH"
+          echo "=== .app contents ==="
           ls -la "$APP_PATH"
 
+          # Verify executable exists
+          EXEC="$APP_PATH/VibeMusic"
+          if [ ! -f "$EXEC" ]; then
+            echo "ERROR: Executable missing!"
+            echo "Files in .app:"
+            find "$APP_PATH" -maxdepth 1
+            exit 1
+          fi
+
+          echo "Executable found: $(file "$EXEC")"
+          echo "Size: $(du -sh "$APP_PATH")"
+
+          # Package IPA
           mkdir -p Payload
-          cp -r "$APP_PATH" Payload/
+          cp -r "$APP_PATH" Payload/VibeMusic.app
           zip -qr VibeMusic.ipa Payload
           ls -lh VibeMusic.ipa
+          echo "SUCCESS: IPA created"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
