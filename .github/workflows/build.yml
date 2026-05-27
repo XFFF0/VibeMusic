@@ -21,22 +21,27 @@ env:
 jobs:
   build:
     name: Build IPA
-    runs-on: macos-14     # Xcode 15, Apple Silicon
+    runs-on: macos-14
 
     steps:
-      # ── Checkout ──────────────────────────────────────────
+      # â”€â”€ Checkout â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Checkout
         uses: actions/checkout@v4
 
-      # ── Select Xcode ──────────────────────────────────────
-      - name: Select Xcode 15
+      # â”€â”€ Select Xcode 15.4 â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      - name: Select Xcode 15.4
         run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
 
-      # ── Install XcodeGen ──────────────────────────────────
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      # â”€â”€ Install XcodeGen 2.41.0 (compatible with Xcode 15.4) â”€â”€
+      - name: Install XcodeGen 2.41.0
+        run: |
+          brew uninstall xcodegen --ignore-dependencies 2>/dev/null || true
+          curl -L https://github.com/yonaskolb/XcodeGen/releases/download/2.41.0/xcodegen.zip -o xcodegen.zip
+          unzip -q xcodegen.zip
+          sudo mv xcodegen /usr/local/bin/xcodegen
+          xcodegen version
 
-      # ── Inject API Keys into xcconfig ─────────────────────
+      # â”€â”€ Inject API Keys â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Write xcconfig with secrets
         run: |
           cat > Secrets.xcconfig <<EOF
@@ -46,15 +51,15 @@ jobs:
           RAPID_API_KEY = ${{ secrets.RAPID_API_KEY }}
           EOF
 
-      # ── Generate Xcode project ────────────────────────────
+      # â”€â”€ Generate Xcode project â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Generate Xcode project
-        run: xcodegen generate --spec project.yml --use-cache
+        run: xcodegen generate --spec project.yml
 
-      # ── Resolve SPM packages ──────────────────────────────
+      # â”€â”€ Resolve SPM packages â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Resolve Swift packages
         run: xcodebuild -resolvePackageDependencies -project VibeMusic.xcodeproj -scheme $SCHEME
 
-      # ── Build (no signing) ────────────────────────────────
+      # â”€â”€ Build (no signing) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Build unsigned .app
         run: |
           xcodebuild build \
@@ -74,7 +79,7 @@ jobs:
             CONFIGURATION_BUILD_DIR=$(pwd)/build/Products \
             | xcpretty --color --simple
 
-      # ── Package .app → .ipa ───────────────────────────────
+      # â”€â”€ Package .app â†’ .ipa â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Package IPA
         run: |
           APP_PATH=$(find build/Products -name "*.app" | head -1)
@@ -86,7 +91,7 @@ jobs:
           cd ..
           ls -lh VibeMusic.ipa
 
-      # ── Upload IPA artifact ───────────────────────────────
+      # â”€â”€ Upload IPA artifact â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Upload IPA
         uses: actions/upload-artifact@v4
         with:
@@ -94,7 +99,7 @@ jobs:
           path: VibeMusic.ipa
           retention-days: 30
 
-      # ── Create GitHub Release (on tag) ────────────────────
+      # â”€â”€ Create GitHub Release (on tag) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       - name: Create Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
@@ -105,7 +110,6 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-  # ── Notify on failure ─────────────────────────────────────
   notify-failure:
     needs: build
     if: failure()
@@ -113,4 +117,4 @@ jobs:
     steps:
       - name: Build failed notification
         run: |
-          echo "::error::Vibe Music build failed! Check logs at ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          echo "::error::Build failed! ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
