@@ -1,3 +1,4 @@
+
 name: Build Vibe Music IPA
 
 on:
@@ -19,7 +20,7 @@ jobs:
       - name: Select Xcode 15.4
         run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
 
-      - name: Install XcodeGen 2.41.0
+      - name: Install XcodeGen
         run: |
           curl -L https://github.com/yonaskolb/XcodeGen/releases/download/2.41.0/xcodegen.zip -o xcodegen.zip
           unzip -q xcodegen.zip
@@ -28,30 +29,40 @@ jobs:
           sudo cp "$BIN" /usr/local/bin/xcodegen
           xcodegen version
 
-      - name: Inject secrets
+      - name: Create Secrets.xcconfig
         env:
           GID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GUS: ${{ secrets.GOOGLE_URL_SCHEME }}
-          YT: ${{ secrets.YOUTUBE_API_KEY }}
-          RA: ${{ secrets.RAPID_API_KEY }}
+          YT:  ${{ secrets.YOUTUBE_API_KEY }}
+          RA:  ${{ secrets.RAPID_API_KEY }}
         run: |
-          printf 'GOOGLE_CLIENT_ID = %s\n' "$GID" > Secrets.xcconfig
-          printf 'GOOGLE_URL_SCHEME = %s\n' "$GUS" >> Secrets.xcconfig
-          printf 'YOUTUBE_API_KEY = %s\n' "$YT" >> Secrets.xcconfig
-          printf 'RAPID_API_KEY = %s\n' "$RA" >> Secrets.xcconfig
+          cat > Secrets.xcconfig << 'XCCONFIG_EOF'
+          GOOGLE_CLIENT_ID = ${GID}
+          GOOGLE_URL_SCHEME = ${GUS}
+          YOUTUBE_API_KEY = ${YT}
+          RAPID_API_KEY = ${RA}
+          XCCONFIG_EOF
 
-      - name: Generate project
+          echo "=== Secrets.xcconfig created ==="
+          echo "GOOGLE_CLIENT_ID  = $( [ -n "$GID" ] && echo 'SET' || echo 'EMPTY' )"
+          echo "GOOGLE_URL_SCHEME = $( [ -n "$GUS" ] && echo 'SET' || echo 'EMPTY' )"
+          echo "YOUTUBE_API_KEY   = $( [ -n "$YT" ]  && echo 'SET' || echo 'EMPTY' )"
+          echo "RAPID_API_KEY     = $( [ -n "$RA" ]  && echo 'SET' || echo 'EMPTY' )"
+          echo "=================================="
+          cat Secrets.xcconfig
+
+      - name: Generate Xcode project
         run: xcodegen generate --spec project.yml
 
-      - name: Resolve packages
+      - name: Resolve package dependencies
         run: xcodebuild -resolvePackageDependencies -project VibeMusic.xcodeproj -scheme $SCHEME
 
-      - name: Build
+      - name: Build IPA
         env:
           GID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GUS: ${{ secrets.GOOGLE_URL_SCHEME }}
-          YT: ${{ secrets.YOUTUBE_API_KEY }}
-          RA: ${{ secrets.RAPID_API_KEY }}
+          YT:  ${{ secrets.YOUTUBE_API_KEY }}
+          RA:  ${{ secrets.RAPID_API_KEY }}
         run: |
           xcodebuild build \
             -project VibeMusic.xcodeproj \
@@ -66,13 +77,37 @@ jobs:
             GOOGLE_CLIENT_ID="$GID" \
             GOOGLE_URL_SCHEME="$GUS" \
             YOUTUBE_API_KEY="$YT" \
-            RAPID_API_KEY="$RA"
+            RAPID_API_KEY="$RA" \
+            | tee build.log
+
+          echo ""
+          echo "=== Build Result ==="
+          if grep -q "BUILD SUCCEEDED" build.log; then
+            echo "BUILD SUCCEEDED"
+          else
+            echo "BUILD FAILED"
+            tail -50 build.log
+            exit 1
+          fi
+
+      - name: Verify API key in built app
+        run: |
+          APP=$(find DerivedData -name "VibeMusic.app" -type d | head -1)
+          echo "App path: $APP"
+          PLIST="$APP/Info.plist"
+          if [ -f "$PLIST" ]; then
+            echo "--- YOUTUBE_API_KEY in Info.plist ---"
+            /usr/libexec/PlistBuddy -c "Print :YOUTUBE_API_KEY" "$PLIST" 2>/dev/null || echo "NOT FOUND"
+            echo "--- RAPID_API_KEY in Info.plist ---"
+            /usr/libexec/PlistBuddy -c "Print :RAPID_API_KEY" "$PLIST" 2>/dev/null || echo "NOT FOUND"
+          else
+            echo "Info.plist not found at $PLIST"
+          fi
 
       - name: Package IPA
         run: |
           APP=$(find DerivedData -name "VibeMusic.app" -type d | head -1)
-          echo "App: $APP"
-          ls "$APP"
+          echo "Packaging: $APP"
           mkdir -p Payload
           cp -r "$APP" Payload/VibeMusic.app
           zip -qr VibeMusic.ipa Payload
