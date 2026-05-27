@@ -1,0 +1,55 @@
+name: VibeMusic
+options:
+  bundleIdPrefix: com.vibe
+  deploymentTarget:
+    iOS: "16.0"
+  xcodeVersion: "15.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: com.vibe.music
+    PRODUCT_NAME: VibeMusic
+    MARKETING_VERSION: 1.0.0
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: 5.9
+    IPHONEOS_DEPLOYMENT_TARGET: 16.0
+    INFOPLIST_FILE: Sources/VibeMusic/Info.plist
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGN_IDENTITY: ""
+    ENABLE_BITCODE: "NO"
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: "YES"
+    # API Keys injected by GitHub Actions secrets
+    GOOGLE_CLIENT_ID: $(GOOGLE_CLIENT_ID)
+    GOOGLE_URL_SCHEME: $(GOOGLE_URL_SCHEME)
+    YOUTUBE_API_KEY: $(YOUTUBE_API_KEY)
+    RAPID_API_KEY: $(RAPID_API_KEY)
+
+packages:
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 7.0.0
+
+targets:
+  VibeMusic:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/VibeMusic
+        excludes:
+          - "**/*.md"
+    resources:
+      - Sources/VibeMusic/Resources
+    dependencies:
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - package: GoogleSignIn
+        product: GoogleSignInSwift
+    info:
+      path: Sources/VibeMusic/Info.plist
+    settings:
+      base:
+        INFOPLIST_KEY_UILaunchStoryboardName: LaunchScreen
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
