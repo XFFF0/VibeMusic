@@ -153,7 +153,7 @@ struct EmptySearchView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 48))
                 .foregroundStyle(VibeColors.textTertiary)
-            Text("No results for "\(query)"")
+            Text("No results for \"\(query)\"")
                 .font(.system(size: 17, weight: .semibold))
                 .foregroundStyle(VibeColors.textSecondary)
             Text("Try a different search")
