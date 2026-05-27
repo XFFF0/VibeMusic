@@ -1,9 +1,10 @@
+
 import SwiftUI
 
 enum VibeColors {
     static let background    = Color(red: 0.04, green: 0.06, blue: 0.04)
     static let surface       = Color(red: 0.08, green: 0.12, blue: 0.08)
-    static let primary       = Color(red: 0.18, green: 0.92, blue: 0.44)   // Electric green
+    static let primary       = Color(red: 0.18, green: 0.92, blue: 0.44)
     static let primaryGlow   = Color(red: 0.10, green: 0.75, blue: 0.30)
     static let secondary     = Color(red: 0.05, green: 0.55, blue: 0.25)
     static let accent        = Color(red: 0.40, green: 1.00, blue: 0.60)
@@ -78,5 +79,43 @@ struct GlowModifier: ViewModifier {
 extension View {
     func glowEffect(color: Color = VibeColors.primary, radius: CGFloat = 12) -> some View {
         modifier(GlowModifier(color: color, radius: radius))
+    }
+}
+
+// MARK: - HTML Decoding
+extension String {
+    var decodedHTML: String {
+        var result = self
+        let entities: [(String, String)] = [
+            ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"),
+            ("&quot;", "\""), ("&#39;", "'"), ("&apos;", "'"),
+            ("&nbsp;", " "), ("&#x27;", "'"), ("&rdquo;", "\""),
+            ("&ldquo;", "\""), ("&#8217;", "'"), ("&mdash;", "—"),
+            ("&ndash;", "–")
+        ]
+        for (entity, char) in entities {
+            result = result.replacingOccurrences(of: entity, with: char)
+        }
+        result = result.replacingOccurrences(
+            of: "&#[xX]([0-9a-fA-F]+);",
+            with: { match in
+                if let val = Int(match.1, radix: 16), let scalar = Unicode.Scalar(val) {
+                    return String(scalar)
+                }
+                return match.0
+            },
+            options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: "&#(\\d+);",
+            with: { match in
+                if let val = Int(match.1), let scalar = Unicode.Scalar(val) {
+                    return String(scalar)
+                }
+                return match.0
+            },
+            options: .regularExpression
+        )
+        return result
     }
 }
