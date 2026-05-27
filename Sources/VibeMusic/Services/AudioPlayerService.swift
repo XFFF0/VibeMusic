@@ -115,7 +115,7 @@ class AudioPlayerService: ObservableObject {
     private func setupTimeObserver() {
         let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
-            guard let self, let item = self.player?.currentItem else { return }
+            guard let self = self, let item = self.player?.currentItem else { return }
             let dur = item.duration.seconds
             if dur.isFinite && dur > 0 {
                 self.duration = dur
@@ -150,7 +150,7 @@ class AudioPlayerService: ObservableObject {
         } catch { print("Audio session error: \(error)") }
     }
 
-    // MARK: - Now Playing Info & Remote Controls
+    // MARK: - Remote Controls
     private func setupRemoteControls() {
         let center = MPRemoteCommandCenter.shared()
         center.playCommand.addTarget  { [weak self] _ in self?.playPause(); return .success }
