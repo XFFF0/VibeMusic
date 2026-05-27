@@ -32,7 +32,7 @@ class MusicSearchService: ObservableObject {
             }
         }
 
-        await MainActor.run {
+        await MainActor.run { [allResults] in
             self.results = allResults
             self.isSearching = false
         }
