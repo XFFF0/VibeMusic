@@ -10,9 +10,13 @@ class MusicSearchService: ObservableObject {
 
     private var cancellables = Set<AnyCancellable>()
 
-    // Replace with your actual API keys (set via Xcode secrets or xcconfig)
-    private let youtubeAPIKey = Bundle.main.object(forInfoDictionaryKey: "YOUTUBE_API_KEY") as? String ?? ""
-    private let rapidAPIKey   = Bundle.main.object(forInfoDictionaryKey: "RAPID_API_KEY") as? String ?? ""
+    // 💡 التعديل المصحح: قراءة المفتاح مباشرة من الـ main dictionary لضمان قراءته في الـ IPA
+    private var youtubeAPIKey: String {
+        return Bundle.main.infoDictionary?["YOUTUBE_API_KEY"] as? String ?? ""
+    }
+    private var rapidAPIKey: String {
+        return Bundle.main.infoDictionary?["RAPID_API_KEY"] as? String ?? ""
+    }
 
     func search(query: String, sources: [Track.Source] = [.youtubeMusic, .youtube, .spotify]) async {
         guard !query.isEmpty else { return }
@@ -40,6 +44,7 @@ class MusicSearchService: ObservableObject {
 
     // MARK: - YouTube Search
     private func searchYouTube(query: String) async -> [Track] {
+        // التحقق من وجود المفتاح، وإذا كان فارغاً يتم الانتقال للمحاكاة الوهمية
         guard !youtubeAPIKey.isEmpty else { return mockYouTubeTracks(query: query) }
 
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
@@ -63,6 +68,7 @@ class MusicSearchService: ObservableObject {
                 )
             }
         } catch {
+            // في حال فشل الاتصال بالإنترنت أو الخادم
             return mockYouTubeTracks(query: query)
         }
     }
@@ -113,71 +119,5 @@ class MusicSearchService: ObservableObject {
                 source: .youtube
             )
         }
-    }
-}
-
-// MARK: - YouTube API Models
-struct YouTubeSearchResponse: Codable {
-    let items: [YouTubeItem]
-    struct YouTubeItem: Codable {
-        let id: VideoID
-        let snippet: Snippet
-        struct VideoID: Codable { let videoId: String }
-        struct Snippet: Codable {
-            let title: String
-            let channelTitle: String
-            let thumbnails: Thumbnails
-            struct Thumbnails: Codable {
-                let high: Thumbnail
-                struct Thumbnail: Codable { let url: String }
-            }
-        }
-    }
-}
-
-// MARK: - Spotify API Models
-struct SpotifySearchResponse: Codable {
-    let tracks: TracksResult
-    struct TracksResult: Codable {
-        let items: [TrackItem]
-        struct TrackItem: Codable {
-            let data: TrackData
-            struct TrackData: Codable {
-                let id: String
-                let name: String
-                let duration: Duration
-                let artists: Artists
-                let albumOfTrack: Album
-                struct Duration: Codable { let totalMilliseconds: Int }
-                struct Artists: Codable {
-                    let items: [ArtistItem]
-                    struct ArtistItem: Codable {
-                        let profile: Profile
-                        struct Profile: Codable { let name: String }
-                    }
-                }
-                struct Album: Codable {
-                    let name: String
-                    let coverArt: CoverArt
-                    struct CoverArt: Codable {
-                        let sources: [Source]
-                        struct Source: Codable { let url: String }
-                    }
-                }
-            }
-        }
-    }
-}
-
-extension String {
-    var decodedHTML: String {
-        guard let data = self.data(using: .utf8),
-              let attributed = try? NSAttributedString(
-                data: data,
-                options: [.documentType: NSAttributedString.DocumentType.html,
-                          .characterEncoding: String.Encoding.utf8.rawValue],
-                documentAttributes: nil)
-        else { return self }
-        return attributed.string
     }
 }
