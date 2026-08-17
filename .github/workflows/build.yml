@@ -1,0 +1,65 @@
+name: Build Vibe Music IPA
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  SCHEME: VibeMusic
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 15.4
+        run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
+
+      - name: Install XcodeGen 2.41.0
+        run: |
+          curl -L https://github.com/yonaskolb/XcodeGen/releases/download/2.41.0/xcodegen.zip -o xg.zip
+          unzip -q xg.zip
+          BIN=$(find . -name "xcodegen" -type f | head -1)
+          chmod +x "$BIN"
+          sudo cp "$BIN" /usr/local/bin/xcodegen
+          xcodegen version
+
+      - name: Generate project
+        run: xcodegen generate --spec project.yml
+
+      - name: Resolve packages
+        run: xcodebuild -resolvePackageDependencies -project VibeMusic.xcodeproj -scheme $SCHEME
+
+      - name: Build
+        run: |
+          xcodebuild build \
+            -project VibeMusic.xcodeproj \
+            -scheme $SCHEME \
+            -configuration Release \
+            -sdk iphoneos \
+            -arch arm64 \
+            -derivedDataPath DerivedData \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package IPA
+        run: |
+          APP=$(find DerivedData -name "VibeMusic.app" -type d | head -1)
+          echo "App path: $APP"
+          ls -la "$APP"
+          mkdir -p Payload
+          cp -r "$APP" Payload/VibeMusic.app
+          zip -qr VibeMusic.ipa Payload
+          ls -lh VibeMusic.ipa
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: VibeMusic-${{ github.run_number }}
+          path: VibeMusic.ipa
+          retention-days: 30
