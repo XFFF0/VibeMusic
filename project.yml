@@ -1,0 +1,42 @@
+name: VibeMusic
+options:
+  bundleIdPrefix: com.vibe
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    PRODUCT_BUNDLE_IDENTIFIER: com.vibe.music
+    MARKETING_VERSION: 1.0.0
+    CURRENT_PROJECT_VERSION: 1
+    SWIFT_VERSION: 5.9
+    IPHONEOS_DEPLOYMENT_TARGET: 16.0
+    INFOPLIST_FILE: Sources/VibeMusic/Info.plist
+    CODE_SIGN_STYLE: Manual
+    CODE_SIGNING_REQUIRED: "NO"
+    CODE_SIGN_IDENTITY: ""
+    ENABLE_BITCODE: "NO"
+    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: "YES"
+
+packages:
+  YouTubePlayerKit:
+    url: https://github.com/SvenTiigi/YouTubePlayerKit
+    from: 1.8.0
+
+targets:
+  VibeMusic:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources/VibeMusic
+    resources:
+      - Resources
+    dependencies:
+      - package: YouTubePlayerKit
+    info:
+      path: Sources/VibeMusic/Info.plist
+    settings:
+      base:
+        INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone: UIInterfaceOrientationPortrait
