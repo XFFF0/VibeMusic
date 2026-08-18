@@ -22,7 +22,7 @@ class PlayerService: ObservableObject {
 
     enum RepeatMode { case none, one, all }
 
-    private var player: AVPlayer?
+    var player: AVPlayer?
     private var timeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
     private var shuffleOrder: [Int] = []
