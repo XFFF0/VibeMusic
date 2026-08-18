@@ -20,11 +20,6 @@ settings:
     ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: "YES"
 
-packages:
-  YouTubePlayerKit:
-    url: https://github.com/SvenTiigi/YouTubePlayerKit
-    from: 1.8.0
-
 targets:
   VibeMusic:
     type: application
@@ -33,8 +28,6 @@ targets:
       - path: Sources/VibeMusic
     resources:
       - Resources
-    dependencies:
-      - package: YouTubePlayerKit
     info:
       path: Sources/VibeMusic/Info.plist
     settings:
