@@ -136,7 +136,7 @@ struct FullPlayerView: View {
                                     }
                                 }
                                 ActionBtn(icon: "square.and.arrow.down", label: "Download") {
-                                    Task { await DownloadService.shared.download(track) }
+                                    DownloadService.shared.download(track)
                                 }
                                 ActionBtn(icon: "text.badge.plus", label: "Queue") {
                                     player.queue.append(track)
