@@ -5,7 +5,7 @@ import MediaPlayer
 import Combine
 
 @MainActor
-class PlayerService: ObservableObject {
+final class PlayerService: ObservableObject {
     static let shared = PlayerService()
 
     @Published var currentTrack: Track?
@@ -45,9 +45,7 @@ class PlayerService: ObservableObject {
 
     func next() {
         guard !queue.isEmpty else { return }
-        let idx = isShuffle
-            ? Int.random(in: 0..<queue.count)
-            : (queueIndex + 1) % queue.count
+        let idx = isShuffle ? Int.random(in: 0..<queue.count) : (queueIndex + 1) % queue.count
         queueIndex = idx
         load(queue[idx])
     }
@@ -80,38 +78,44 @@ class PlayerService: ObservableObject {
         isPlaying = false
         currentTrack = track
         stopPlayer()
-        // addRecent is @MainActor - safe to call here
         LibraryService.shared.addRecent(track)
 
-        Task.detached {
-            var urlString: String?
-            if track.isDownloaded, let path = track.localPath {
-                urlString = "file://\(path)"
-            } else if track.source == .youtube, let vid = track.videoID {
-                urlString = await YouTubeService.shared.extractAudioURL(videoID: vid)
-            } else if track.source == .soundcloud {
-                urlString = await SoundCloudService.shared.resolveStreamURL(track: track)
-                    ?? track.streamURL
-            } else {
-                urlString = track.streamURL
-            }
+        // Capture only what we need - avoid capturing self in detached task
+        let trackCopy = track
+        let currentVolume = volume
 
+        Task { @MainActor in
+            let urlString = await Self.resolveURL(for: trackCopy)
             guard let str = urlString, let url = URL(string: str) else {
-                await MainActor.run { self.isLoading = false }
+                self.isLoading = false
                 return
             }
-
             let item = AVPlayerItem(url: url)
-            await MainActor.run {
-                self.player = AVPlayer(playerItem: item)
-                self.player?.volume = self.volume
-                self.player?.play()
-                self.isPlaying  = true
-                self.isLoading  = false
-                self.addTimeObserver()
-                self.observeEnd()
-                self.updateNowPlaying()
-            }
+            self.player = AVPlayer(playerItem: item)
+            self.player?.volume = currentVolume
+            self.player?.play()
+            self.isPlaying  = true
+            self.isLoading  = false
+            self.addTimeObserver()
+            self.observeEnd()
+            self.updateNowPlaying()
+        }
+    }
+
+    // nonisolated static so Task can call without actor hop issues
+    private nonisolated static func resolveURL(for track: Track) async -> String? {
+        if track.isDownloaded, let path = track.localPath {
+            return "file://\(path)"
+        }
+        switch track.source {
+        case .youtube:
+            guard let vid = track.videoID else { return nil }
+            return await YouTubeService.shared.extractAudioURL(videoID: vid)
+        case .soundcloud:
+            return await SoundCloudService.shared.resolveStreamURL(track: track)
+                ?? track.streamURL
+        case .local:
+            return track.streamURL
         }
     }
 
@@ -119,6 +123,7 @@ class PlayerService: ObservableObject {
         if let obs = timeObserver { player?.removeTimeObserver(obs); timeObserver = nil }
         endObserver?.cancel(); endObserver = nil
         player?.pause(); player = nil
+        progress = 0; currentTime = 0; duration = 0
     }
 
     private func addTimeObserver() {
@@ -172,15 +177,14 @@ class PlayerService: ObservableObject {
             MPNowPlayingInfoPropertyPlaybackRate:        isPlaying ? 1.0 : 0.0
         ]
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        guard let artURL = URL(string: t.artworkURL) else { return }
-        Task.detached {
-            guard let data  = try? Data(contentsOf: artURL),
-                  let image = UIImage(data: data) else { return }
+        let artURLString = t.artworkURL
+        Task { @MainActor in
+            guard let artURL = URL(string: artURLString),
+                  let data   = try? Data(contentsOf: artURL),
+                  let image  = UIImage(data: data) else { return }
             let art = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-            await MainActor.run {
-                info[MPMediaItemPropertyArtwork] = art
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-            }
+            info[MPMediaItemPropertyArtwork] = art
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = info
         }
     }
 }
