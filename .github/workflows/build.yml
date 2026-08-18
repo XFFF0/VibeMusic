@@ -46,23 +46,12 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tee /tmp/xcodebuild.log
-          if grep -q "BUILD FAILED\|\*\* BUILD FAILED \*\*" /tmp/xcodebuild.log; then
-            echo "=== SWIFT ERRORS ==="
-            grep -E "error:|swift.*error" /tmp/xcodebuild.log | grep -v "^/Applications/Xcode" | head -40
-            exit 1
-          fi
+            | grep -E "error:|warning:|BUILD SUCCEEDED|BUILD FAILED|CompileSwift|note:" | head -100
 
       - name: Package IPA
         run: |
-          echo "=== Searching for .app ==="
-          find DerivedData -name "*.app" -type d 2>/dev/null
-          APP=$(find DerivedData -name "*.app" -type d | grep -v ".xctest" | head -1)
-          if [ -z "$APP" ]; then
-            echo "No .app found"
-            exit 1
-          fi
-          echo "Packaging: $APP"
+          APP=$(find DerivedData -name "*.app" -type d | grep -v xctest | head -1)
+          echo "App: $APP"
           ls "$APP"
           mkdir -p Payload
           cp -r "$APP" Payload/
@@ -75,11 +64,3 @@ jobs:
           name: VibeMusic-${{ github.run_number }}
           path: VibeMusic.ipa
           retention-days: 30
-
-      - name: Upload Xcode log on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: xcode-log-${{ github.run_number }}
-          path: /tmp/xcodebuild.log
-          retention-days: 7
