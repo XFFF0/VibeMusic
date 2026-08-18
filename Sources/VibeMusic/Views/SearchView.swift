@@ -146,8 +146,8 @@ struct SearchView: View {
 
         var combined: [Track] = []
         // Interleave results
-        let max = max(yt.count, sc.count)
-        for i in 0..<max {
+        let maxCount = max(yt.count, sc.count)
+        for i in 0..<maxCount {
             if i < yt.count { combined.append(yt[i]) }
             if i < sc.count { combined.append(sc[i]) }
         }
