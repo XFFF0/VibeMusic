@@ -118,7 +118,7 @@ struct FullPlayerView: View {
                             // Volume
                             HStack(spacing: 10) {
                                 Image(systemName: "speaker.fill").foregroundStyle(Color.vHint).font(.system(size: 14))
-                                Slider(value: Binding(get: { Double(player.volume) }, set: { player.volume = Float($0); player.player?.volume = Float($0) }), in: 0...1)
+                                Slider(value: Binding(get: { Double(player.volume) }, set: { player.setVolume(Float($0)) }), in: 0...1)
                                     .tint(Color.vGreen)
                                 Image(systemName: "speaker.wave.3.fill").foregroundStyle(Color.vHint).font(.system(size: 14))
                             }.padding(.horizontal, 28)
