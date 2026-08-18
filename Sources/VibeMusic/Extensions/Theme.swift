@@ -50,34 +50,29 @@ extension View {
 struct WaveformBars: View {
     var isAnimating: Bool = true
     var barCount: Int = 4
-    @State private var heights: [CGFloat] = [8, 16, 12, 20]
+    @State private var phase: Bool = false
 
     var body: some View {
         HStack(spacing: 2) {
             ForEach(0..<barCount, id: \.self) { i in
                 Capsule()
                     .fill(Color.vGreen)
-                    .frame(width: 3, height: isAnimating ? heights[i % heights.count] : 8)
+                    .frame(width: 3, height: barHeight(i))
                     .animation(
-                        isAnimating
-                            ? .easeInOut(duration: 0.4).repeatForever(autoreverses: true).delay(Double(i) * 0.1)
-                            : .default,
-                        value: heights
+                        .easeInOut(duration: 0.38).repeatForever(autoreverses: true).delay(Double(i) * 0.1),
+                        value: phase
                     )
             }
         }
-        .onAppear {
-            guard isAnimating else { return }
-            animate()
-        }
-        .onChange(of: isAnimating) { _ in animate() }
+        .onAppear { if isAnimating { phase.toggle() } }
+        .onChange(of: isAnimating) { v in if v { phase.toggle() } }
     }
 
-    private func animate() {
-        guard isAnimating else { return }
-        Timer.scheduledTimer(withTimeInterval: 0.35, repeats: true) { t in
-            if !isAnimating { t.invalidate(); return }
-            withAnimation { heights = (0..<barCount).map { _ in CGFloat.random(in: 6...22) } }
-        }
+    private func barHeight(_ i: Int) -> CGFloat {
+        guard isAnimating else { return 6 }
+        let bases: [CGFloat] = [8, 18, 12, 22, 10, 20, 14]
+        let alts:  [CGFloat] = [18, 8, 22, 10, 20, 12, 6]
+        let arr = phase ? alts : bases
+        return arr[i % arr.count]
     }
 }
