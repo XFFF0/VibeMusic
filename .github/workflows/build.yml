@@ -36,7 +36,6 @@ jobs:
 
       - name: Build
         run: |
-          set -o pipefail
           xcodebuild build \
             -project VibeMusic.xcodeproj \
             -scheme $SCHEME \
@@ -47,40 +46,28 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tee build_output.txt | grep -E "^(error:|warning: |.*error:)" | head -50 || true
-          if grep -q "BUILD FAILED" build_output.txt; then
-            grep "error:" build_output.txt | grep -v "^/Applications" | head -30
+            2>&1 | tee /tmp/xcodebuild.log
+          if grep -q "BUILD FAILED\|\*\* BUILD FAILED \*\*" /tmp/xcodebuild.log; then
+            echo "=== SWIFT ERRORS ==="
+            grep -E "error:|swift.*error" /tmp/xcodebuild.log | grep -v "^/Applications/Xcode" | head -40
             exit 1
           fi
-
-      - name: List DerivedData
-        run: |
-          echo "=== All .app files ==="
-          find DerivedData -name "*.app" -type d 2>/dev/null || echo "No .app found"
-          echo ""
-          echo "=== DerivedData/Build/Products ==="
-          ls -la DerivedData/Build/Products/ 2>/dev/null || echo "No Products dir"
 
       - name: Package IPA
         run: |
-          APP=$(find DerivedData/Build/Products -name "*.app" -type d | head -1)
+          echo "=== Searching for .app ==="
+          find DerivedData -name "*.app" -type d 2>/dev/null
+          APP=$(find DerivedData -name "*.app" -type d | grep -v ".xctest" | head -1)
           if [ -z "$APP" ]; then
-            APP=$(find DerivedData -name "*.app" -type d | head -1)
-          fi
-          if [ -z "$APP" ]; then
-            echo "ERROR: No .app found in DerivedData"
-            find DerivedData -maxdepth 5 | head -30
+            echo "No .app found"
             exit 1
           fi
-          echo "Using: $APP"
-          ls -la "$APP"
+          echo "Packaging: $APP"
+          ls "$APP"
           mkdir -p Payload
           cp -r "$APP" Payload/
-          cd Payload && ls
-          cd ..
           zip -qr VibeMusic.ipa Payload
           ls -lh VibeMusic.ipa
-          echo "SUCCESS"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
@@ -89,10 +76,10 @@ jobs:
           path: VibeMusic.ipa
           retention-days: 30
 
-      - name: Upload build log on failure
+      - name: Upload Xcode log on failure
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: build-log-${{ github.run_number }}
-          path: build_output.txt
+          name: xcode-log-${{ github.run_number }}
+          path: /tmp/xcodebuild.log
           retention-days: 7
