@@ -4,7 +4,7 @@ class SoundCloudService {
     static let shared = SoundCloudService()
 
     // SoundCloud public client ID (rotates - using known working one)
-    private var clientID = "a3e059563d7fd3372b49429ad9abd52b"
+    private let clientID = "a3e059563d7fd3372b49429ad9abd52b"
 
     func search(query: String) async -> [Track] {
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
