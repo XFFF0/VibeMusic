@@ -2,6 +2,7 @@ import SwiftUI
 
 struct RootView: View {
     @EnvironmentObject var player: PlayerService
+    @EnvironmentObject var library: LibraryService
     @State private var tab: Tab = .home
 
     enum Tab: String, CaseIterable {
@@ -40,7 +41,7 @@ struct RootView: View {
                 if player.currentTrack != nil {
                     MiniPlayerView()
                         .transition(.move(edge: .bottom).combined(with: .opacity))
-                        .animation(.spring(response: 0.35), value: player.currentTrack != nil)
+                        .animation(.spring(response: 0.35), value: player.isPlaying)
                 }
                 TabBar(selected: $tab)
             }
@@ -48,6 +49,7 @@ struct RootView: View {
         .ignoresSafeArea(edges: .bottom)
         .fullScreenCover(isPresented: $player.showPlayer) {
             FullPlayerView()
+                .environmentObject(library)
         }
     }
 }
