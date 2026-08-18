@@ -17,7 +17,6 @@ settings:
     CODE_SIGNING_REQUIRED: "NO"
     CODE_SIGN_IDENTITY: ""
     ENABLE_BITCODE: "NO"
-    ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: "YES"
 
 targets:
@@ -26,8 +25,6 @@ targets:
     platform: iOS
     sources:
       - path: Sources/VibeMusic
-    resources:
-      - Resources
     info:
       path: Sources/VibeMusic/Info.plist
     settings:
