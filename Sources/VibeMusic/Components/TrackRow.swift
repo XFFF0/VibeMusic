@@ -48,7 +48,7 @@ struct TrackRow: View {
                               systemImage: library.isLiked(track) ? "heart.slash" : "heart")
                     }
                     Button { showAdd = true } label: { Label("Add to Playlist", systemImage: "music.note.list") }
-                    Button { Task { await DownloadService.shared.download(track) } } label: {
+                    Button { DownloadService.shared.download(track) } label: {
                         Label("Download", systemImage: "arrow.down.circle")
                     }
                     Button {
