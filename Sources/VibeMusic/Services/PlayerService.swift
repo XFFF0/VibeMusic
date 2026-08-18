@@ -8,26 +8,27 @@ class PlayerService: ObservableObject {
     static let shared = PlayerService()
 
     @Published var currentTrack: Track?
-    @Published var isPlaying = false
+    @Published var isPlaying    = false
     @Published var progress: Double = 0
     @Published var currentTime: TimeInterval = 0
-    @Published var duration: TimeInterval = 0
-    @Published var isLoading = false
+    @Published var duration:    TimeInterval = 0
+    @Published var isLoading    = false
     @Published var queue: [Track] = []
-    @Published var queueIndex = 0
-    @Published var isShuffle = false
+    @Published var queueIndex   = 0
+    @Published var isShuffle    = false
     @Published var repeatMode: RepeatMode = .none
     @Published var volume: Float = 1.0
-    @Published var showPlayer = false
+    @Published var showPlayer   = false
 
     enum RepeatMode { case none, one, all }
 
     var player: AVPlayer?
     private var timeObserver: Any?
-    private var cancellables = Set<AnyCancellable>()
+    private var endObserver: AnyCancellable?
 
     private init() { setupRemoteControls() }
 
+    // MARK: - Public API
     func play(track: Track, queue: [Track] = []) {
         self.queue = queue.isEmpty ? [track] : queue
         self.queueIndex = self.queue.firstIndex(where: { $0.id == track.id }) ?? 0
@@ -43,18 +44,18 @@ class PlayerService: ObservableObject {
 
     func next() {
         guard !queue.isEmpty else { return }
-        let next = isShuffle
+        let idx = isShuffle
             ? Int.random(in: 0..<queue.count)
             : (queueIndex + 1) % queue.count
-        queueIndex = next
-        load(queue[next])
+        queueIndex = idx
+        load(queue[idx])
     }
 
     func previous() {
         if currentTime > 3 { seek(to: 0); return }
-        let prev = max(queueIndex - 1, 0)
-        queueIndex = prev
-        load(queue[prev])
+        let idx = max(queueIndex - 1, 0)
+        queueIndex = idx
+        load(queue[idx])
     }
 
     func seek(to progress: Double) {
@@ -67,11 +68,18 @@ class PlayerService: ObservableObject {
         player?.seek(to: t, toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
+    func setVolume(_ v: Float) {
+        volume = v
+        player?.volume = v
+    }
+
+    // MARK: - Load
     private func load(_ track: Track) {
         isLoading = true
         isPlaying = false
         currentTrack = track
-        removeObserver()
+        stopPlayer()
+        // addRecent is @MainActor - safe to call here
         LibraryService.shared.addRecent(track)
 
         Task.detached {
@@ -97,35 +105,36 @@ class PlayerService: ObservableObject {
                 self.player = AVPlayer(playerItem: item)
                 self.player?.volume = self.volume
                 self.player?.play()
-                self.isPlaying = true
-                self.isLoading = false
-                self.addObserver()
+                self.isPlaying  = true
+                self.isLoading  = false
+                self.addTimeObserver()
                 self.observeEnd()
                 self.updateNowPlaying()
             }
         }
     }
 
-    private func addObserver() {
+    private func stopPlayer() {
+        if let obs = timeObserver { player?.removeTimeObserver(obs); timeObserver = nil }
+        endObserver?.cancel(); endObserver = nil
+        player?.pause(); player = nil
+    }
+
+    private func addTimeObserver() {
         let interval = CMTime(seconds: 0.5, preferredTimescale: 600)
         timeObserver = player?.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] t in
             guard let self, let item = self.player?.currentItem else { return }
             let d = item.duration.seconds
             guard d.isFinite, d > 0 else { return }
-            self.duration = d
+            self.duration    = d
             self.currentTime = t.seconds
-            self.progress = t.seconds / d
+            self.progress    = t.seconds / d
         }
     }
 
-    private func removeObserver() {
-        if let obs = timeObserver { player?.removeTimeObserver(obs); timeObserver = nil }
-        player?.pause()
-        cancellables.removeAll()
-    }
-
     private func observeEnd() {
-        NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime)
+        endObserver = NotificationCenter.default
+            .publisher(for: .AVPlayerItemDidPlayToEndTime)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in
                 guard let self else { return }
@@ -135,18 +144,18 @@ class PlayerService: ObservableObject {
                 case .none: if self.queueIndex < self.queue.count - 1 { self.next() } else { self.isPlaying = false }
                 }
             }
-            .store(in: &cancellables)
     }
 
+    // MARK: - Lock Screen
     private func setupRemoteControls() {
         let c = MPRemoteCommandCenter.shared()
-        c.playCommand.addTarget  { [weak self] _ in Task { await self?.playPause() }; return .success }
-        c.pauseCommand.addTarget { [weak self] _ in Task { await self?.playPause() }; return .success }
-        c.nextTrackCommand.addTarget     { [weak self] _ in Task { await self?.next() }; return .success }
-        c.previousTrackCommand.addTarget { [weak self] _ in Task { await self?.previous() }; return .success }
+        c.playCommand.addTarget           { [weak self] _ in Task { @MainActor in self?.playPause() };    return .success }
+        c.pauseCommand.addTarget          { [weak self] _ in Task { @MainActor in self?.playPause() };    return .success }
+        c.nextTrackCommand.addTarget      { [weak self] _ in Task { @MainActor in self?.next() };         return .success }
+        c.previousTrackCommand.addTarget  { [weak self] _ in Task { @MainActor in self?.previous() };     return .success }
         c.changePlaybackPositionCommand.addTarget { [weak self] e in
             if let ev = e as? MPChangePlaybackPositionCommandEvent {
-                Task { await self?.seekTime(ev.positionTime) }
+                Task { @MainActor in self?.seekTime(ev.positionTime) }
             }
             return .success
         }
@@ -162,23 +171,15 @@ class PlayerService: ObservableObject {
             MPNowPlayingInfoPropertyPlaybackRate:        isPlaying ? 1.0 : 0.0
         ]
         MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-        if let artURL = URL(string: t.artworkURL) {
-            Task.detached {
-                if let data = try? Data(contentsOf: artURL), let img = UIImage(data: data) {
-                    let art = MPMediaItemArtwork(boundsSize: img.size) { _ in img }
-                    await MainActor.run {
-                        info[MPMediaItemPropertyArtwork] = art
-                        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-                    }
-                }
+        guard let artURL = URL(string: t.artworkURL) else { return }
+        Task.detached {
+            guard let data  = try? Data(contentsOf: artURL),
+                  let image = UIImage(data: data) else { return }
+            let art = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+            await MainActor.run {
+                info[MPMediaItemPropertyArtwork] = art
+                MPNowPlayingInfoCenter.default().nowPlayingInfo = info
             }
         }
-    }
-}
-
-extension PlayerService {
-    func setVolume(_ v: Float) {
-        volume = v
-        player?.volume = v
     }
 }
