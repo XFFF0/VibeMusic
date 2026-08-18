@@ -45,8 +45,7 @@ jobs:
             -derivedDataPath DerivedData \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            | grep -E "error:|warning:|BUILD SUCCEEDED|BUILD FAILED|CompileSwift|note:" | head -100
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Package IPA
         run: |
