@@ -36,6 +36,7 @@ jobs:
 
       - name: Build
         run: |
+          set -o pipefail
           xcodebuild build \
             -project VibeMusic.xcodeproj \
             -scheme $SCHEME \
@@ -45,12 +46,19 @@ jobs:
             -derivedDataPath DerivedData \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            2>&1 | tee build_output.txt | grep -E "error:|warning:|Build succeeded|Build FAILED" || true
+          
+          if grep -q "Build FAILED" build_output.txt; then
+            echo "=== ERRORS ==="
+            grep "error:" build_output.txt | grep -v "^/Applications" | head -40
+            exit 1
+          fi
 
       - name: Package IPA
         run: |
           APP=$(find DerivedData -name "VibeMusic.app" -type d | head -1)
-          echo "App path: $APP"
+          echo "App: $APP"
           ls -la "$APP"
           mkdir -p Payload
           cp -r "$APP" Payload/VibeMusic.app
@@ -63,3 +71,11 @@ jobs:
           name: VibeMusic-${{ github.run_number }}
           path: VibeMusic.ipa
           retention-days: 30
+
+      - name: Upload build log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-log-${{ github.run_number }}
+          path: build_output.txt
+          retention-days: 7
