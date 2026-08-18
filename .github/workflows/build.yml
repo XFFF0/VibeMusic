@@ -47,23 +47,40 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tee build_output.txt | grep -E "error:|warning:|Build succeeded|Build FAILED" || true
-          
-          if grep -q "Build FAILED" build_output.txt; then
-            echo "=== ERRORS ==="
-            grep "error:" build_output.txt | grep -v "^/Applications" | head -40
+            2>&1 | tee build_output.txt | grep -E "^(error:|warning: |.*error:)" | head -50 || true
+          if grep -q "BUILD FAILED" build_output.txt; then
+            grep "error:" build_output.txt | grep -v "^/Applications" | head -30
             exit 1
           fi
 
+      - name: List DerivedData
+        run: |
+          echo "=== All .app files ==="
+          find DerivedData -name "*.app" -type d 2>/dev/null || echo "No .app found"
+          echo ""
+          echo "=== DerivedData/Build/Products ==="
+          ls -la DerivedData/Build/Products/ 2>/dev/null || echo "No Products dir"
+
       - name: Package IPA
         run: |
-          APP=$(find DerivedData -name "VibeMusic.app" -type d | head -1)
-          echo "App: $APP"
+          APP=$(find DerivedData/Build/Products -name "*.app" -type d | head -1)
+          if [ -z "$APP" ]; then
+            APP=$(find DerivedData -name "*.app" -type d | head -1)
+          fi
+          if [ -z "$APP" ]; then
+            echo "ERROR: No .app found in DerivedData"
+            find DerivedData -maxdepth 5 | head -30
+            exit 1
+          fi
+          echo "Using: $APP"
           ls -la "$APP"
           mkdir -p Payload
-          cp -r "$APP" Payload/VibeMusic.app
+          cp -r "$APP" Payload/
+          cd Payload && ls
+          cd ..
           zip -qr VibeMusic.ipa Payload
           ls -lh VibeMusic.ipa
+          echo "SUCCESS"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
