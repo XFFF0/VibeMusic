@@ -1,0 +1,2 @@
+error: Multiple commands produce '/Users/runner/work/VibeMusic/VibeMusic/DerivedData/Build/Products/Release-iphoneos/.app'
+--- BUILD STATUS ---
