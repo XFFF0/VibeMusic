@@ -19,14 +19,14 @@ jobs:
       - name: Select Xcode 15.4
         run: sudo xcode-select -s /Applications/Xcode_15.4.app/Contents/Developer
 
-      - name: Install XcodeGen 2.41.0
+      - name: Install tools
         run: |
           curl -L https://github.com/yonaskolb/XcodeGen/releases/download/2.41.0/xcodegen.zip -o xg.zip
           unzip -q xg.zip
           BIN=$(find . -name "xcodegen" -type f | head -1)
           chmod +x "$BIN"
           sudo cp "$BIN" /usr/local/bin/xcodegen
-          xcodegen version
+          gem install xcpretty --no-document 2>/dev/null || true
 
       - name: Generate project
         run: xcodegen generate --spec project.yml
@@ -35,6 +35,7 @@ jobs:
         run: xcodebuild -resolvePackageDependencies -project VibeMusic.xcodeproj -scheme $SCHEME
 
       - name: Build
+        id: build
         run: |
           xcodebuild build \
             -project VibeMusic.xcodeproj \
@@ -46,11 +47,20 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            2>&1 | tee /tmp/build.log; BUILD_EXIT=${PIPESTATUS[0]}
-          echo "=== ERRORS ==="
-          grep -E "error:" /tmp/build.log | grep -v "^/Applications/Xcode_15" | head -50 || true
-          echo "=== END ERRORS ==="
-          exit $BUILD_EXIT
+            2>&1 | tee /tmp/xcode_full.log | xcpretty --color --simple || true
+          
+          echo ""
+          echo "=============================="
+          echo "SWIFT COMPILE ERRORS:"
+          echo "=============================="
+          grep -n "error:" /tmp/xcode_full.log | grep -v "^/Applications/Xcode_15" | grep -v "warning:" || echo "No errors found in grep"
+          echo "=============================="
+          
+          if grep -q "\*\* BUILD FAILED \*\*" /tmp/xcode_full.log; then
+            echo "BUILD FAILED"
+            exit 1
+          fi
+          echo "BUILD SUCCEEDED"
 
       - name: Package IPA
         run: |
@@ -67,3 +77,11 @@ jobs:
           name: VibeMusic-${{ github.run_number }}
           path: VibeMusic.ipa
           retention-days: 30
+
+      - name: Upload full log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: xcode-full-log-${{ github.run_number }}
+          path: /tmp/xcode_full.log
+          retention-days: 7
