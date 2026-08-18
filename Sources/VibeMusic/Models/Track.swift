@@ -1,6 +1,6 @@
 import Foundation
 
-struct Track: Identifiable, Codable, Equatable, Hashable {
+struct Track: Identifiable, Codable, Equatable, Hashable, Sendable {
     let id: String
     var title: String
     var artist: String
@@ -13,6 +13,10 @@ struct Track: Identifiable, Codable, Equatable, Hashable {
     var isDownloaded: Bool = false
     var localPath: String?
     var addedAt: Date = Date()
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, artist, album, duration, artworkURL, streamURL, videoID, source, isDownloaded, localPath, addedAt
+    }
 
     enum Source: String, Codable, CaseIterable {
         case youtube     = "YouTube"
