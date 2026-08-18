@@ -36,9 +36,6 @@ class SoundCloudService {
     // Fallback: SoundCloud oEmbed search
     private func searchViaWidget(query: String) async -> [Track] {
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        guard let url = URL(string: "https://soundcloud.com/search/sounds?q=\(encoded)") else { return [] }
-        // Returns empty — handled gracefully in UI
-        _ = url
         return []
     }
 
