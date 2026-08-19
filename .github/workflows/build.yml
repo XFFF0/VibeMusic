@@ -29,10 +29,7 @@ jobs:
           xcodegen version
 
       - name: Generate project
-        run: |
-          xcodegen generate --spec project.yml
-          echo "=== Generated targets ==="
-          xcodebuild -project VibeMusic.xcodeproj -list
+        run: xcodegen generate --spec project.yml
 
       - name: Build
         run: |
@@ -45,20 +42,12 @@ jobs:
             -derivedDataPath DerivedData \
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGNING_ALLOWED=NO \
-            2>&1 | grep -E "error:|BUILD SUCCEEDED|BUILD FAILED|Compiling" | head -60
-          exit ${PIPESTATUS[0]}
+            CODE_SIGNING_ALLOWED=NO
 
       - name: Package IPA
         run: |
-          echo "=== All .app bundles ==="
-          find DerivedData -name "*.app" -type d
           APP=$(find DerivedData -name "VibeMusic.app" -type d | head -1)
-          if [ -z "$APP" ]; then
-            echo "VibeMusic.app not found, trying any .app"
-            APP=$(find DerivedData -name "*.app" -type d | grep -v xctest | head -1)
-          fi
-          echo "Using: $APP"
+          echo "App: $APP"
           mkdir -p Payload
           cp -r "$APP" Payload/VibeMusic.app
           zip -qr VibeMusic.ipa Payload
