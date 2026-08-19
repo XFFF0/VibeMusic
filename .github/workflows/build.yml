@@ -36,7 +36,7 @@ jobs:
       - name: Generate project
         run: xcodegen generate --spec project.yml
 
-      - name: Build and capture errors
+      - name: Build
         run: |
           xcodebuild build \
             -project VibeMusic.xcodeproj \
@@ -48,25 +48,17 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            2>&1 > /tmp/build_full.log || true
-
-          # Extract Swift errors
-          grep -E "Sources.*error:" /tmp/build_full.log | \
-            sed "s|/Users/runner/work/VibeMusic/VibeMusic/||g" | \
-            head -60 > build_errors.txt
-
-          grep "BUILD SUCCEEDED\|\*\* BUILD FAILED" /tmp/build_full.log >> build_errors.txt
-
-          echo "=== build_errors.txt ==="
-          cat build_errors.txt
-
+            2>&1 > build_full.log || true
+          
+          # Commit full log (trimmed)
+          head -200 build_full.log > build_errors.txt
           git config user.email "ci@github.com"
           git config user.name "CI"
-          git add build_errors.txt
-          git commit -m "ci: errors [skip ci]" 2>/dev/null || true
-          git push 2>/dev/null || true
-
-          if grep -q "BUILD FAILED\|\*\* BUILD FAILED" /tmp/build_full.log; then
+          git add build_errors.txt build_full.log
+          git commit -m "ci: build log [skip ci]" || true
+          git push || true
+          
+          if grep -q "BUILD FAILED" build_full.log; then
             exit 1
           fi
 
