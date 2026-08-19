@@ -26,6 +26,8 @@ targets:
     platform: iOS
     sources:
       - path: Sources/VibeMusic
+        excludes:
+          - Info.plist
     info:
       path: Sources/VibeMusic/Info.plist
     settings:
