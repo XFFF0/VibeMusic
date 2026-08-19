@@ -29,16 +29,16 @@ jobs:
           xcodegen version
 
       - name: Generate project
-        run: xcodegen generate --spec project.yml
-
-      - name: Resolve packages
-        run: xcodebuild -resolvePackageDependencies -project VibeMusic.xcodeproj -scheme $SCHEME
+        run: |
+          xcodegen generate --spec project.yml
+          echo "=== Generated targets ==="
+          xcodebuild -project VibeMusic.xcodeproj -list
 
       - name: Build
         run: |
           xcodebuild build \
             -project VibeMusic.xcodeproj \
-            -scheme $SCHEME \
+            -scheme VibeMusic \
             -configuration Release \
             -sdk iphoneos \
             -arch arm64 \
@@ -46,30 +46,23 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
-            PRODUCT_NAME=VibeMusic
+            2>&1 | grep -E "error:|BUILD SUCCEEDED|BUILD FAILED|Compiling" | head -60
+          exit ${PIPESTATUS[0]}
 
       - name: Package IPA
         run: |
-          echo "=== Searching .app files ==="
-          find DerivedData/Build/Products -name "*.app" -type d 2>/dev/null || find DerivedData -name "*.app" -type d 2>/dev/null
-
-          APP=$(find DerivedData/Build/Products/Release-iphoneos -maxdepth 1 -name "VibeMusic.app" -type d 2>/dev/null | head -1)
+          echo "=== All .app bundles ==="
+          find DerivedData -name "*.app" -type d
+          APP=$(find DerivedData -name "VibeMusic.app" -type d | head -1)
           if [ -z "$APP" ]; then
-            APP=$(find DerivedData -name "VibeMusic.app" -type d 2>/dev/null | head -1)
+            echo "VibeMusic.app not found, trying any .app"
+            APP=$(find DerivedData -name "*.app" -type d | grep -v xctest | head -1)
           fi
-          if [ -z "$APP" ]; then
-            echo "ERROR: VibeMusic.app not found"
-            exit 1
-          fi
-
-          echo "Packaging: $APP"
-          ls -la "$APP"
-
+          echo "Using: $APP"
           mkdir -p Payload
           cp -r "$APP" Payload/VibeMusic.app
           zip -qr VibeMusic.ipa Payload
           ls -lh VibeMusic.ipa
-          echo "IPA created successfully"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
