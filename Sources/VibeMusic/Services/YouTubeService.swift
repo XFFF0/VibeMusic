@@ -4,23 +4,15 @@ class YouTubeService {
     static let shared = YouTubeService()
     private init() {}
 
-    // ── YouTube Data API v3 (official) ──────────────────────────────
-    // Get free key: console.cloud.google.com → Enable YouTube Data API v3 → Create API Key
-    // Add it to Info.plist as YOUTUBE_API_KEY or paste directly below:
-    private var apiKey: String {
-        Bundle.main.object(forInfoDictionaryKey: "YOUTUBE_API_KEY") as? String ?? ""
-    }
+    private var apiKey: String { AppConfig.youtubeAPIKey }
 
-    // ── Invidious for audio extraction (no key needed) ───────────────
     private let invidiousInstances = [
         "https://invidious.io.lol",
         "https://iv.ggtyler.dev",
         "https://invidious.privacydev.net",
         "https://yt.drgnz.club",
-        "https://invidious.nerdvpn.de",
-        "https://invidious.perennialte.ch"
+        "https://invidious.nerdvpn.de"
     ]
-
     private let pipedInstances = [
         "https://pipedapi.kavin.rocks",
         "https://pipedapi.adminforge.de",
@@ -29,8 +21,8 @@ class YouTubeService {
 
     // MARK: - Search
     func search(query: String) async -> [Track] {
-        // Use official API if key available
-        if !apiKey.isEmpty {
+        // Official API first (always works if key is valid)
+        if !apiKey.isEmpty && apiKey != "YOUTUBE_API_KEY_PLACEHOLDER" {
             if let tracks = await searchOfficial(query: query) { return tracks }
         }
         // Fallback: Invidious
@@ -44,17 +36,15 @@ class YouTubeService {
         return []
     }
 
-    // Official YouTube Data API v3
     private func searchOfficial(query: String) async -> [Track]? {
         let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        let urlStr = "https://www.googleapis.com/youtube/v3/search"
-            + "?part=snippet&q=\(q)&type=video&videoCategoryId=10"
-            + "&maxResults=20&key=\(apiKey)"
+        let urlStr = "https://www.googleapis.com/youtube/v3/search?part=snippet&q=\(q)&type=video&videoCategoryId=10&maxResults=20&key=\(apiKey)"
         guard let url = URL(string: urlStr) else { return nil }
         do {
             let (data, resp) = try await URLSession.shared.data(from: url)
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
             let result = try JSONDecoder().decode(YTSearchResponse.self, from: data)
+            guard !result.items.isEmpty else { return nil }
             return result.items.map { item in
                 Track(
                     id: item.id.videoId,
@@ -152,12 +142,10 @@ class YouTubeService {
     struct YTSearchResponse: Codable {
         let items: [Item]
         struct Item: Codable {
-            let id: VideoID
-            let snippet: Snippet
+            let id: VideoID; let snippet: Snippet
             struct VideoID: Codable { let videoId: String }
             struct Snippet: Codable {
-                let title: String; let channelTitle: String
-                let thumbnails: Thumbs
+                let title: String; let channelTitle: String; let thumbnails: Thumbs
                 struct Thumbs: Codable {
                     let `default`: Thumb?; let medium: Thumb?; let high: Thumb?
                     struct Thumb: Codable { let url: String }
@@ -190,9 +178,10 @@ class YouTubeService {
 
 extension String {
     var htmlDecoded: String {
-        var result = self
-        let replacements = ["&amp;":"&","&lt;":"<","&gt;":">","&quot;":"\"","&#39;":"'","&apos;":"'"]
-        for (k,v) in replacements { result = result.replacingOccurrences(of: k, with: v) }
-        return result
+        var s = self
+        [("&amp;","&"),("&lt;","<"),("&gt;",">"),("&quot;","\""),("&#39;","'")].forEach {
+            s = s.replacingOccurrences(of: $0.0, with: $0.1)
+        }
+        return s
     }
 }
