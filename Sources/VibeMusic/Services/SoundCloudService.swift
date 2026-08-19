@@ -2,52 +2,61 @@ import Foundation
 
 class SoundCloudService {
     static let shared = SoundCloudService()
+    private init() {}
 
-    // SoundCloud public client ID (rotates - using known working one)
-    private let clientID = "a3e059563d7fd3372b49429ad9abd52b"
+    // SoundCloud client IDs rotate frequently - using multiple known working ones
+    private let clientIDs = [
+        "a3e059563d7fd3372b49429ad9abd52b",
+        "iZIs9mchVcX5lhVRyQGGAYlNPVldzAoX",
+        "2t9loNQH90kzJcsFCODdigxfp325aq4z"
+    ]
 
     func search(query: String) async -> [Track] {
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        guard let url = URL(string: "https://api.soundcloud.com/tracks?q=\(encoded)&limit=20&client_id=\(clientID)") else { return [] }
-        do {
-            let (data, resp) = try await URLSession.shared.data(from: url)
-            guard (resp as? HTTPURLResponse)?.statusCode == 200 else {
-                return await searchViaWidget(query: query)
+        for cid in clientIDs {
+            if let tracks = await searchWithClientID(cid, query: encoded) {
+                return tracks
             }
-            let tracks = try JSONDecoder().decode([SCTrack].self, from: data)
-            return tracks.compactMap { t in
-                guard let stream = t.stream_url else { return nil }
+        }
+        return []
+    }
+
+    private func searchWithClientID(_ clientID: String, query: String) async -> [Track]? {
+        guard let url = URL(string: "https://api.soundcloud.com/tracks?q=\(query)&limit=20&client_id=\(clientID)") else { return nil }
+        var req = URLRequest(url: url, timeoutInterval: 8)
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            let items = try JSONDecoder().decode([SCTrack].self, from: data)
+            guard !items.isEmpty else { return nil }
+            return items.compactMap { t in
+                guard let streamURL = t.stream_url else { return nil }
+                let art = t.artwork_url?.replacingOccurrences(of: "large", with: "t500x500") ?? ""
                 return Track(
                     id: "sc_\(t.id)",
                     title: t.title,
                     artist: t.user.username,
                     album: "SoundCloud",
                     duration: TimeInterval(t.duration / 1000),
-                    artworkURL: t.artwork_url?.replacingOccurrences(of: "large", with: "t500x500") ?? "",
-                    streamURL: "\(stream)?client_id=\(clientID)",
+                    artworkURL: art,
+                    streamURL: "\(streamURL)?client_id=\(clientID)",
                     source: .soundcloud
                 )
             }
-        } catch {
-            return await searchViaWidget(query: query)
-        }
-    }
-
-    // Fallback: SoundCloud oEmbed search
-    private func searchViaWidget(query: String) async -> [Track] {
-        let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        return []
+        } catch { return nil }
     }
 
     func resolveStreamURL(track: Track) async -> String? {
-        guard let streamURL = track.streamURL else { return nil }
-        // If already direct URL
-        if streamURL.contains(".mp3") || streamURL.contains("media.sndcdn") { return streamURL }
-        guard let url = URL(string: streamURL) else { return nil }
+        guard let str = track.streamURL, let url = URL(string: str) else { return nil }
+        // Direct URL - just return it
+        if str.contains("media.sndcdn.com") || str.contains(".mp3") { return str }
         do {
-            let (_, resp) = try await URLSession.shared.data(from: url)
-            return (resp as? HTTPURLResponse)?.url?.absoluteString
-        } catch { return nil }
+            // Follow redirect to get final stream URL
+            var req = URLRequest(url: url, timeoutInterval: 8)
+            req.httpMethod = "GET"
+            let (_, resp) = try await URLSession.shared.data(for: req)
+            return (resp as? HTTPURLResponse)?.url?.absoluteString ?? str
+        } catch { return str }
     }
 
     struct SCTrack: Codable {
