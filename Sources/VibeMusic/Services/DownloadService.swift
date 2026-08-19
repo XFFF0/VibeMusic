@@ -6,39 +6,47 @@ class DownloadService: ObservableObject {
 
     private init() {}
 
-    // Not async - fire and forget
     func download(_ track: Track) {
         guard active[track.id] == nil else { return }
         active[track.id] = 0
 
-        Task.detached { [weak self] in
+        // Capture only value types - no self capture
+        let trackID    = track.id
+        let source     = track.source
+        let videoID    = track.videoID
+        let streamURL  = track.streamURL
+        let isDownloaded = track.isDownloaded
+        let localPath  = track.localPath
+
+        Task.detached {
             var urlStr: String?
-            if track.source == .youtube, let vid = track.videoID {
+            if isDownloaded, let path = localPath {
+                urlStr = "file://\(path)"
+            } else if source == .youtube, let vid = videoID {
                 urlStr = await YouTubeService.shared.extractAudioURL(videoID: vid)
             } else {
-                urlStr = track.streamURL
+                urlStr = streamURL
             }
 
             guard let str = urlStr, let url = URL(string: str) else {
-                await MainActor.run { self?.active.removeValue(forKey: track.id) }
+                await MainActor.run { DownloadService.shared.active.removeValue(forKey: trackID) }
                 return
             }
 
-            let dest = Self.downloadsDir().appendingPathComponent("\(track.id).m4a")
+            let dest = Self.downloadsDir().appendingPathComponent("\(trackID).m4a")
             try? FileManager.default.removeItem(at: dest)
 
             do {
                 let (tmpURL, _) = try await URLSession.shared.download(from: url)
                 try FileManager.default.moveItem(at: tmpURL, to: dest)
-                // Call @MainActor method on main actor
                 await MainActor.run {
-                    self?.active.removeValue(forKey: track.id)
-                    Task { @MainActor in
-                        LibraryService.shared.markDownloaded(track.id, path: dest.path)
-                    }
+                    DownloadService.shared.active.removeValue(forKey: trackID)
+                    LibraryService.shared.markDownloaded(trackID, path: dest.path)
                 }
             } catch {
-                await MainActor.run { self?.active.removeValue(forKey: track.id) }
+                await MainActor.run {
+                    DownloadService.shared.active.removeValue(forKey: trackID)
+                }
             }
         }
     }
