@@ -37,6 +37,8 @@ jobs:
         run: xcodegen generate --spec project.yml
 
       - name: Build
+        env:
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
         run: |
           xcodebuild build \
             -project VibeMusic.xcodeproj \
@@ -48,23 +50,25 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
+            YOUTUBE_API_KEY="$YOUTUBE_API_KEY" \
             2>&1 > build_full.log || true
-          
-          # Commit full log (trimmed)
-          head -200 build_full.log > build_errors.txt
+
+          head -100 build_full.log > build_errors.txt
           git config user.email "ci@github.com"
           git config user.name "CI"
-          git add build_errors.txt build_full.log
-          git commit -m "ci: build log [skip ci]" || true
-          git push || true
-          
+          git add build_errors.txt build_full.log 2>/dev/null || true
+          git commit -m "ci: build log [skip ci]" 2>/dev/null || true
+          git push 2>/dev/null || true
+
           if grep -q "BUILD FAILED" build_full.log; then
+            grep "error:" build_full.log | grep -v "/Applications/Xcode_15" | head -20
             exit 1
           fi
 
       - name: Package IPA
         run: |
           APP=$(find DerivedData -name "VibeMusic.app" -type d | head -1)
+          echo "App: $APP"
           mkdir -p Payload
           cp -r "$APP" Payload/VibeMusic.app
           zip -qr VibeMusic.ipa Payload
