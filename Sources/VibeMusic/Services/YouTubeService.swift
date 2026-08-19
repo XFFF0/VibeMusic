@@ -4,17 +4,23 @@ class YouTubeService {
     static let shared = YouTubeService()
     private init() {}
 
-    // Multiple Invidious instances - app tries each until one responds
+    // ── YouTube Data API v3 (official) ──────────────────────────────
+    // Get free key: console.cloud.google.com → Enable YouTube Data API v3 → Create API Key
+    // Add it to Info.plist as YOUTUBE_API_KEY or paste directly below:
+    private var apiKey: String {
+        Bundle.main.object(forInfoDictionaryKey: "YOUTUBE_API_KEY") as? String ?? ""
+    }
+
+    // ── Invidious for audio extraction (no key needed) ───────────────
     private let invidiousInstances = [
         "https://invidious.io.lol",
         "https://iv.ggtyler.dev",
         "https://invidious.privacydev.net",
-        "https://invidious.nerdvpn.de",
         "https://yt.drgnz.club",
+        "https://invidious.nerdvpn.de",
         "https://invidious.perennialte.ch"
     ]
 
-    // Piped API instances (alternative open YouTube frontend)
     private let pipedInstances = [
         "https://pipedapi.kavin.rocks",
         "https://pipedapi.adminforge.de",
@@ -23,45 +29,64 @@ class YouTubeService {
 
     // MARK: - Search
     func search(query: String) async -> [Track] {
+        // Use official API if key available
+        if !apiKey.isEmpty {
+            if let tracks = await searchOfficial(query: query) { return tracks }
+        }
+        // Fallback: Invidious
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-
-        // Try Invidious first
-        for instance in invidiousInstances {
-            if let tracks = await searchInvidious(base: instance, query: encoded) {
-                return tracks
-            }
+        for base in invidiousInstances {
+            if let t = await searchInvidious(base: base, query: encoded) { return t }
         }
-
-        // Fallback: Piped API
-        for instance in pipedInstances {
-            if let tracks = await searchPiped(base: instance, query: encoded) {
-                return tracks
-            }
+        for base in pipedInstances {
+            if let t = await searchPiped(base: base, query: encoded) { return t }
         }
-
         return []
     }
 
+    // Official YouTube Data API v3
+    private func searchOfficial(query: String) async -> [Track]? {
+        let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
+        let urlStr = "https://www.googleapis.com/youtube/v3/search"
+            + "?part=snippet&q=\(q)&type=video&videoCategoryId=10"
+            + "&maxResults=20&key=\(apiKey)"
+        guard let url = URL(string: urlStr) else { return nil }
+        do {
+            let (data, resp) = try await URLSession.shared.data(from: url)
+            guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+            let result = try JSONDecoder().decode(YTSearchResponse.self, from: data)
+            return result.items.map { item in
+                Track(
+                    id: item.id.videoId,
+                    title: item.snippet.title.htmlDecoded,
+                    artist: item.snippet.channelTitle.htmlDecoded,
+                    album: "YouTube",
+                    duration: 0,
+                    artworkURL: item.snippet.thumbnails.high?.url
+                        ?? item.snippet.thumbnails.medium?.url
+                        ?? item.snippet.thumbnails.default?.url ?? "",
+                    videoID: item.id.videoId,
+                    source: .youtube
+                )
+            }
+        } catch { return nil }
+    }
+
     private func searchInvidious(base: String, query: String) async -> [Track]? {
-        guard let url = URL(string: "\(base)/api/v1/search?q=\(query)&type=video&page=1") else { return nil }
+        guard let url = URL(string: "\(base)/api/v1/search?q=\(query)&type=video") else { return nil }
         var req = URLRequest(url: url, timeoutInterval: 6)
-        req.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-            let results = try JSONDecoder().decode([InvidiousResult].self, from: data)
-            return results.prefix(20).map { item in
-                let thumb = item.videoThumbnails.first(where: { $0.quality == "high" })?.url
-                    ?? item.videoThumbnails.first?.url ?? ""
+            let items = try JSONDecoder().decode([InvResult].self, from: data)
+            return items.prefix(20).map { v in
+                let thumb = v.videoThumbnails.first(where: { $0.quality == "high" })?.url
+                    ?? v.videoThumbnails.first?.url ?? ""
                 return Track(
-                    id: item.videoId,
-                    title: item.title,
-                    artist: item.author,
-                    album: "YouTube",
-                    duration: TimeInterval(item.lengthSeconds),
+                    id: v.videoId, title: v.title, artist: v.author,
+                    album: "YouTube", duration: TimeInterval(v.lengthSeconds),
                     artworkURL: thumb.hasPrefix("//") ? "https:" + thumb : thumb,
-                    videoID: item.videoId,
-                    source: .youtube
+                    videoID: v.videoId, source: .youtube
                 )
             }
         } catch { return nil }
@@ -74,19 +99,14 @@ class YouTubeService {
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-            let response = try JSONDecoder().decode(PipedSearchResponse.self, from: data)
-            return response.items.prefix(20).compactMap { item in
-                guard item.type == "stream", let vid = item.url?.components(separatedBy: "=").last else { return nil }
-                let thumb = item.thumbnail ?? ""
+            let resp2 = try JSONDecoder().decode(PipedSearch.self, from: data)
+            return resp2.items.prefix(20).compactMap { item in
+                guard item.type == "stream",
+                      let vid = item.url?.components(separatedBy: "=").last else { return nil }
                 return Track(
-                    id: vid,
-                    title: item.title ?? "Unknown",
-                    artist: item.uploaderName ?? "Unknown",
-                    album: "YouTube",
-                    duration: TimeInterval(item.duration ?? 0),
-                    artworkURL: thumb,
-                    videoID: vid,
-                    source: .youtube
+                    id: vid, title: item.title ?? "", artist: item.uploaderName ?? "",
+                    album: "YouTube", duration: TimeInterval(item.duration ?? 0),
+                    artworkURL: item.thumbnail ?? "", videoID: vid, source: .youtube
                 )
             }
         } catch { return nil }
@@ -94,34 +114,25 @@ class YouTubeService {
 
     // MARK: - Audio extraction
     func extractAudioURL(videoID: String) async -> String? {
-        // Try Invidious
-        for instance in invidiousInstances {
-            if let url = await extractInvidious(base: instance, videoID: videoID) {
-                return url
-            }
+        for base in invidiousInstances {
+            if let u = await extractInvidious(base: base, videoID: videoID) { return u }
         }
-        // Try Piped
-        for instance in pipedInstances {
-            if let url = await extractPiped(base: instance, videoID: videoID) {
-                return url
-            }
+        for base in pipedInstances {
+            if let u = await extractPiped(base: base, videoID: videoID) { return u }
         }
         return nil
     }
 
     private func extractInvidious(base: String, videoID: String) async -> String? {
         guard let url = URL(string: "\(base)/api/v1/videos/\(videoID)?fields=adaptiveFormats,formatStreams") else { return nil }
-        var req = URLRequest(url: url, timeoutInterval: 8)
         do {
-            let (data, resp) = try await URLSession.shared.data(for: req)
+            let (data, resp) = try await URLSession.shared.data(from: url)
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-            let video = try JSONDecoder().decode(InvidiousVideo.self, from: data)
-            // Best audio format
-            let audioURL = video.adaptiveFormats
+            let v = try JSONDecoder().decode(InvVideo.self, from: data)
+            return v.adaptiveFormats
                 .filter { $0.type.contains("audio/mp4") || $0.type.contains("audio/webm") }
                 .sorted { ($0.bitrate ?? 0) > ($1.bitrate ?? 0) }
-                .first?.url
-            return audioURL ?? video.formatStreams.first?.url
+                .first?.url ?? v.formatStreams.first?.url
         } catch { return nil }
     }
 
@@ -132,45 +143,56 @@ class YouTubeService {
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
-            let response = try JSONDecoder().decode(PipedStreams.self, from: data)
-            // Best audio stream
-            return response.audioStreams
-                .sorted { ($0.bitrate ?? 0) > ($1.bitrate ?? 0) }
-                .first?.url
+            let s = try JSONDecoder().decode(PipedStreams.self, from: data)
+            return s.audioStreams.sorted { ($0.bitrate ?? 0) > ($1.bitrate ?? 0) }.first?.url
         } catch { return nil }
     }
 
     // MARK: - Models
-    struct InvidiousResult: Codable {
-        let videoId: String
-        let title: String
-        let author: String
-        let lengthSeconds: Int
-        let videoThumbnails: [Thumbnail]
-        struct Thumbnail: Codable { let quality: String; let url: String }
-    }
-
-    struct InvidiousVideo: Codable {
-        let adaptiveFormats: [AudioFormat]
-        let formatStreams: [MuxedFormat]
-        struct AudioFormat: Codable { let type: String; let url: String; let bitrate: Int? }
-        struct MuxedFormat: Codable { let url: String }
-    }
-
-    struct PipedSearchResponse: Codable {
-        let items: [PipedItem]
-        struct PipedItem: Codable {
-            let type: String?
-            let url: String?
-            let title: String?
-            let uploaderName: String?
-            let thumbnail: String?
-            let duration: Int?
+    struct YTSearchResponse: Codable {
+        let items: [Item]
+        struct Item: Codable {
+            let id: VideoID
+            let snippet: Snippet
+            struct VideoID: Codable { let videoId: String }
+            struct Snippet: Codable {
+                let title: String; let channelTitle: String
+                let thumbnails: Thumbs
+                struct Thumbs: Codable {
+                    let `default`: Thumb?; let medium: Thumb?; let high: Thumb?
+                    struct Thumb: Codable { let url: String }
+                }
+            }
         }
     }
-
+    struct InvResult: Codable {
+        let videoId: String; let title: String; let author: String; let lengthSeconds: Int
+        let videoThumbnails: [Thumb]
+        struct Thumb: Codable { let quality: String; let url: String }
+    }
+    struct InvVideo: Codable {
+        let adaptiveFormats: [Fmt]; let formatStreams: [Mux]
+        struct Fmt: Codable { let type: String; let url: String; let bitrate: Int? }
+        struct Mux: Codable { let url: String }
+    }
+    struct PipedSearch: Codable {
+        let items: [Item]
+        struct Item: Codable {
+            let type: String?; let url: String?; let title: String?
+            let uploaderName: String?; let thumbnail: String?; let duration: Int?
+        }
+    }
     struct PipedStreams: Codable {
-        let audioStreams: [AudioStream]
-        struct AudioStream: Codable { let url: String; let bitrate: Int? }
+        let audioStreams: [AS]
+        struct AS: Codable { let url: String; let bitrate: Int? }
+    }
+}
+
+extension String {
+    var htmlDecoded: String {
+        var result = self
+        let replacements = ["&amp;":"&","&lt;":"<","&gt;":">","&quot;":"\"","&#39;":"'","&apos;":"'"]
+        for (k,v) in replacements { result = result.replacingOccurrences(of: k, with: v) }
+        return result
     }
 }
