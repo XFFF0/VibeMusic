@@ -21,30 +21,33 @@ class YouTubeService {
 
     // MARK: - Search
     func search(query: String) async -> [Track] {
-        // Official API first (always works if key is valid)
-        if !apiKey.isEmpty && apiKey != "YOUTUBE_API_KEY_PLACEHOLDER" {
-            if let tracks = await searchOfficial(query: query) { return tracks }
+        let key = apiKey
+        // Official API first - most reliable
+        if !key.isEmpty && key != "YOUTUBE_API_KEY_PLACEHOLDER" {
+            if let tracks = await searchOfficial(query: query, key: key), !tracks.isEmpty {
+                return tracks
+            }
         }
         // Fallback: Invidious
         let encoded = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         for base in invidiousInstances {
-            if let t = await searchInvidious(base: base, query: encoded) { return t }
+            if let t = await searchInvidious(base: base, query: encoded), !t.isEmpty { return t }
         }
         for base in pipedInstances {
-            if let t = await searchPiped(base: base, query: encoded) { return t }
+            if let t = await searchPiped(base: base, query: encoded), !t.isEmpty { return t }
         }
         return []
     }
 
-    private func searchOfficial(query: String) async -> [Track]? {
+    private func searchOfficial(query: String, key: String) async -> [Track]? {
         let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
-        let urlStr = "https://www.googleapis.com/youtube/v3/search?part=snippet&q=\(q)&type=video&videoCategoryId=10&maxResults=20&key=\(apiKey)"
+        let urlStr = "https://www.googleapis.com/youtube/v3/search?part=snippet&q=\(q)&type=video&maxResults=20&key=\(key)"
         guard let url = URL(string: urlStr) else { return nil }
+        var req = URLRequest(url: url, timeoutInterval: 15)
         do {
-            let (data, resp) = try await URLSession.shared.data(from: url)
+            let (data, resp) = try await URLSession.shared.data(for: req)
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
             let result = try JSONDecoder().decode(YTSearchResponse.self, from: data)
-            guard !result.items.isEmpty else { return nil }
             return result.items.map { item in
                 Track(
                     id: item.id.videoId,
@@ -64,7 +67,7 @@ class YouTubeService {
 
     private func searchInvidious(base: String, query: String) async -> [Track]? {
         guard let url = URL(string: "\(base)/api/v1/search?q=\(query)&type=video") else { return nil }
-        var req = URLRequest(url: url, timeoutInterval: 6)
+        var req = URLRequest(url: url, timeoutInterval: 8)
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
@@ -84,7 +87,7 @@ class YouTubeService {
 
     private func searchPiped(base: String, query: String) async -> [Track]? {
         guard let url = URL(string: "\(base)/search?q=\(query)&filter=music_songs") else { return nil }
-        var req = URLRequest(url: url, timeoutInterval: 6)
+        var req = URLRequest(url: url, timeoutInterval: 8)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
@@ -115,8 +118,9 @@ class YouTubeService {
 
     private func extractInvidious(base: String, videoID: String) async -> String? {
         guard let url = URL(string: "\(base)/api/v1/videos/\(videoID)?fields=adaptiveFormats,formatStreams") else { return nil }
+        var req = URLRequest(url: url, timeoutInterval: 10)
         do {
-            let (data, resp) = try await URLSession.shared.data(from: url)
+            let (data, resp) = try await URLSession.shared.data(for: req)
             guard (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
             let v = try JSONDecoder().decode(InvVideo.self, from: data)
             return v.adaptiveFormats
@@ -128,7 +132,7 @@ class YouTubeService {
 
     private func extractPiped(base: String, videoID: String) async -> String? {
         guard let url = URL(string: "\(base)/streams/\(videoID)") else { return nil }
-        var req = URLRequest(url: url, timeoutInterval: 8)
+        var req = URLRequest(url: url, timeoutInterval: 10)
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         do {
             let (data, resp) = try await URLSession.shared.data(for: req)
