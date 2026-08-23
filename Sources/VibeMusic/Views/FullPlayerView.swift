@@ -10,7 +10,7 @@ struct FullPlayerView: View {
 
     var body: some View {
         ZStack {
-            // Blurred artwork background
+            // Background
             if let track = player.currentTrack {
                 AsyncImage(url: URL(string: track.artworkURL)) { img in
                     img.resizable().aspectRatio(contentMode: .fill)
@@ -18,27 +18,47 @@ struct FullPlayerView: View {
                 } placeholder: { Color.clear }
                 .ignoresSafeArea()
             }
-            Color.vBG.opacity(0.82).ignoresSafeArea()
+            Color.vBG.opacity(0.85).ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Drag handle
-                Capsule().fill(Color.vStroke).frame(width: 38, height: 5).padding(.top, 16)
+                // Top bar - close button
+                HStack {
+                    Button(action: { player.showPlayer = false }) {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 20, weight: .semibold))
+                            .foregroundStyle(Color.vText)
+                            .frame(width: 44, height: 44)
+                            .background(Color.vGlass)
+                            .clipShape(Circle())
+                    }
+                    Spacer()
+                    Text("Now Playing")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(Color.vSubtext)
+                    Spacer()
+                    // Share button placeholder
+                    Color.clear.frame(width: 44, height: 44)
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 16)
 
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 24) {
+                    VStack(spacing: 22) {
                         // Artwork
                         if let track = player.currentTrack {
                             ArtworkView(url: track.artworkURL, size: 300, radius: 22)
-                                .shadow(color: Color.vGreen.opacity(player.isPlaying ? 0.30 : 0.08), radius: player.isPlaying ? 40 : 16)
+                                .shadow(color: Color.vGreen.opacity(player.isPlaying ? 0.30 : 0.08),
+                                        radius: player.isPlaying ? 40 : 16)
                                 .scaleEffect(player.isPlaying ? 1.0 : 0.93)
                                 .animation(.spring(response: 0.5, dampingFraction: 0.7), value: player.isPlaying)
-                                .padding(.top, 24)
+                                .padding(.top, 12)
 
                             // Track info + Like
                             HStack(alignment: .center) {
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(track.title)
-                                        .font(.system(size: 22, weight: .bold)).foregroundStyle(Color.vText).lineLimit(1)
+                                        .font(.system(size: 22, weight: .bold))
+                                        .foregroundStyle(Color.vText).lineLimit(1)
                                     HStack(spacing: 6) {
                                         Image(systemName: track.source.icon)
                                             .font(.system(size: 11)).foregroundStyle(Color.vSubtext)
@@ -49,20 +69,18 @@ struct FullPlayerView: View {
                                 Spacer()
                                 Button { library.toggleLike(track) } label: {
                                     Image(systemName: library.isLiked(track) ? "heart.fill" : "heart")
-                                        .font(.system(size: 24))
+                                        .font(.system(size: 26))
                                         .foregroundStyle(library.isLiked(track) ? Color.vGreen : Color.vSubtext)
                                         .greenGlow(radius: library.isLiked(track) ? 10 : 0)
                                 }
                             }.padding(.horizontal, 24)
 
-                            // Progress
+                            // Progress slider
                             VStack(spacing: 6) {
                                 Slider(value: Binding(
                                     get: { player.progress },
                                     set: { player.seek(to: $0) }
-                                ), in: 0...1)
-                                .tint(Color.vGreen)
-                                .padding(.horizontal, 24)
+                                ), in: 0...1).tint(Color.vGreen).padding(.horizontal, 24)
 
                                 HStack {
                                     Text(format(player.currentTime))
@@ -70,20 +88,16 @@ struct FullPlayerView: View {
                                     Text("-\(format(max(0, player.duration - player.currentTime)))")
                                 }
                                 .font(.system(size: 12, weight: .medium, design: .monospaced))
-                                .foregroundStyle(Color.vHint)
-                                .padding(.horizontal, 28)
+                                .foregroundStyle(Color.vHint).padding(.horizontal, 28)
                             }
 
-                            // Controls
+                            // Playback controls
                             HStack(spacing: 32) {
-                                // Shuffle
                                 Button { player.isShuffle.toggle() } label: {
-                                    Image(systemName: "shuffle")
-                                        .font(.system(size: 20))
+                                    Image(systemName: "shuffle").font(.system(size: 20))
                                         .foregroundStyle(player.isShuffle ? Color.vGreen : Color.vSubtext)
                                         .greenGlow(radius: player.isShuffle ? 8 : 0)
                                 }
-                                // Previous
                                 Button { player.previous() } label: {
                                     Image(systemName: "backward.fill").font(.system(size: 28)).foregroundStyle(Color.vText)
                                 }
@@ -100,30 +114,33 @@ struct FullPlayerView: View {
                                         }
                                     }
                                 }
-                                // Next
                                 Button { player.next() } label: {
                                     Image(systemName: "forward.fill").font(.system(size: 28)).foregroundStyle(Color.vText)
                                 }
-                                // Repeat
                                 Button {
-                                    player.repeatMode = player.repeatMode == .none ? .all : player.repeatMode == .all ? .one : .none
+                                    switch player.repeatMode {
+                                    case .none: player.repeatMode = .all
+                                    case .all:  player.repeatMode = .one
+                                    case .one:  player.repeatMode = .none
+                                    }
                                 } label: {
                                     Image(systemName: player.repeatMode == .one ? "repeat.1" : "repeat")
                                         .font(.system(size: 20))
                                         .foregroundStyle(player.repeatMode != .none ? Color.vGreen : Color.vSubtext)
-                                        .greenGlow(radius: player.repeatMode != .none ? 8 : 0)
                                 }
                             }
 
                             // Volume
                             HStack(spacing: 10) {
                                 Image(systemName: "speaker.fill").foregroundStyle(Color.vHint).font(.system(size: 14))
-                                Slider(value: Binding(get: { Double(player.volume) }, set: { player.setVolume(Float($0)) }), in: 0...1)
-                                    .tint(Color.vGreen)
+                                Slider(value: Binding(
+                                    get: { Double(player.volume) },
+                                    set: { player.setVolume(Float($0)) }
+                                ), in: 0...1).tint(Color.vGreen)
                                 Image(systemName: "speaker.wave.3.fill").foregroundStyle(Color.vHint).font(.system(size: 14))
                             }.padding(.horizontal, 28)
 
-                            // Action row
+                            // Action buttons
                             HStack(spacing: 28) {
                                 ActionBtn(icon: "text.quote", label: "Lyrics", active: showLyrics) {
                                     showLyrics.toggle()
@@ -139,10 +156,14 @@ struct FullPlayerView: View {
                                     DownloadService.shared.download(track)
                                 }
                                 ActionBtn(icon: "text.badge.plus", label: "Queue") {
-                                    player.queue.append(track)
+                                    if !player.queue.contains(where: { $0.id == track.id }) {
+                                        player.queue.append(track)
+                                    }
                                 }
-                                ActionBtn(icon: track.source == .youtube ? "play.rectangle.fill" : "cloud.fill",
-                                          label: track.source.rawValue) { }
+                                ActionBtn(icon: "heart.fill", label: library.isLiked(track) ? "Liked" : "Like",
+                                          active: library.isLiked(track)) {
+                                    library.toggleLike(track)
+                                }
                             }.padding(.horizontal, 24)
 
                             // Lyrics panel
@@ -152,23 +173,25 @@ struct FullPlayerView: View {
                                     .transition(.opacity.combined(with: .move(edge: .bottom)))
                             }
                         }
-                        Spacer(minLength: 40)
+                        Spacer(minLength: 50)
                     }
                 }
             }
         }
         .preferredColorScheme(.dark)
-        .gesture(DragGesture().onChanged { v in
-            if v.translation.height > 0 { dragOffset = v.translation.height }
-        }.onEnded { v in
-            if v.translation.height > 100 { player.showPlayer = false }
-            withAnimation(.spring()) { dragOffset = 0 }
-        })
+        .gesture(DragGesture()
+            .onChanged { v in if v.translation.height > 0 { dragOffset = v.translation.height } }
+            .onEnded { v in
+                if v.translation.height > 80 { player.showPlayer = false }
+                withAnimation(.spring()) { dragOffset = 0 }
+            }
+        )
         .offset(y: dragOffset)
         .animation(.interactiveSpring(), value: dragOffset)
     }
 
     private func format(_ t: TimeInterval) -> String {
+        guard t > 0 else { return "0:00" }
         let m = Int(t) / 60; let s = Int(t) % 60
         return String(format: "%d:%02d", m, s)
     }
