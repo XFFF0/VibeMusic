@@ -28,13 +28,6 @@ jobs:
           sudo cp "$BIN" /usr/local/bin/xcodegen
           xcodegen version
 
-      - name: Inject API key into Config.swift
-        env:
-          YT_KEY: ${{ secrets.YOUTUBE_API_KEY }}
-        run: |
-          printf '// Auto-generated\nenum AppConfig {\n    static let youtubeAPIKey = "%s"\n}\n' "$YT_KEY" > Sources/VibeMusic/Config.swift
-          cat Sources/VibeMusic/Config.swift
-
       - name: Generate project
         run: xcodegen generate --spec project.yml
 
@@ -55,14 +48,26 @@ jobs:
             grep "error:" /tmp/build.log | grep -v "/Applications/Xcode_15" | head -20
             exit 1
           fi
+          echo "Build result:"
+          grep "BUILD SUCCEEDED\|BUILD FAILED" /tmp/build.log
 
       - name: Package IPA
         run: |
+          echo "=== Finding .app ==="
+          find DerivedData -name "VibeMusic.app" -type d 2>/dev/null
           APP=$(find DerivedData -name "VibeMusic.app" -type d | head -1)
+          if [ -z "$APP" ]; then
+            echo "ERROR: App not found"
+            find DerivedData -name "*.app" -type d 2>/dev/null
+            exit 1
+          fi
+          echo "App: $APP"
+          echo "App size: $(du -sh $APP)"
+          ls "$APP" | head -10
           mkdir -p Payload
           cp -r "$APP" Payload/VibeMusic.app
           zip -qr VibeMusic.ipa Payload
-          ls -lh VibeMusic.ipa
+          echo "IPA size: $(ls -lh VibeMusic.ipa | awk '{print $5}')"
 
       - name: Upload IPA
         uses: actions/upload-artifact@v4
