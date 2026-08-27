@@ -5,6 +5,11 @@ options:
     iOS: "16.0"
   createIntermediateGroups: true
 
+packages:
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    from: 7.0.0
+
 targets:
   VibeMusic:
     type: application
@@ -14,6 +19,11 @@ targets:
       - path: Sources/VibeMusic
         excludes:
           - Info.plist
+    dependencies:
+      - package: GoogleSignIn
+        product: GoogleSignIn
+      - package: GoogleSignIn
+        product: GoogleSignInSwift
     info:
       path: Sources/VibeMusic/Info.plist
       properties:
@@ -29,6 +39,11 @@ targets:
           - UIInterfaceOrientationPortrait
         UILaunchScreen: {}
         MinimumOSVersion: "16.0"
+        GIDClientID: "$(GID_CLIENT_ID)"
+        CFBundleURLTypes:
+          - CFBundleTypeRole: Editor
+            CFBundleURLSchemes:
+              - "$(GID_URL_SCHEME)"
     settings:
       base:
         PRODUCT_NAME: VibeMusic
@@ -42,3 +57,5 @@ targets:
         ALWAYS_EMBED_SWIFT_STANDARD_LIBRARIES: "YES"
         MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: "1"
+        GID_CLIENT_ID: ""
+        GID_URL_SCHEME: ""
